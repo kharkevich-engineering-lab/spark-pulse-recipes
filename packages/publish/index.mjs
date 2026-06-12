@@ -46,7 +46,7 @@ function generateManifest(recipesDir, version) {
   }
 
   const manifests = files.map((f) => ({
-    path: join('recipes', f),
+    path: f,
     mediaType: 'application/vnd.delivery-station.recipe.v1+yaml',
   }));
 

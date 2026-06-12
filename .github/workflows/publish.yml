@@ -57,3 +57,4 @@ jobs:
         run: node packages/publish/index.mjs --version ${{ needs.release.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.event.repository.name }}

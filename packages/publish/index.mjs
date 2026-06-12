@@ -103,6 +103,7 @@ function main() {
       'recipes-dir': { type: 'string', default: RECIPES_DIR },
       registry: { type: 'string', default: DEFAULT_REGISTRY },
       namespace: { type: 'string', default: DEFAULT_NAMESPACE },
+      repository: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       version: { type: 'string' },
     },

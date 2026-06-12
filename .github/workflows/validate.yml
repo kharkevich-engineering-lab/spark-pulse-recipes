@@ -1,0 +1,46 @@
+name: validate
+
+on:
+  pull_request:
+    paths:
+      - 'packages/validate/**'
+      - 'recipes/*.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/validate/**'
+      - 'recipes/*.yaml'
+
+jobs:
+  list-recipes:
+    name: List recipes to validate
+    runs-on: ubuntu-latest
+    outputs:
+      recipes: ${{ steps.set-recipes.outputs.recipes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: List recipes
+        id: set-recipes
+        run: |
+          echo "recipes=$(ls recipes/*.yaml | xargs)" >> $GITHUB_OUTPUT
+
+  validate:
+    name: Validate recipe schema
+    needs: list-recipes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        recipe: ${{fromJSON(needs.list-recipes.outputs.recipes)}}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Validate ${{ matrix.recipe }}
+        run: node packages/validate/index.mjs --dir recipes/${{ matrix.recipe }}

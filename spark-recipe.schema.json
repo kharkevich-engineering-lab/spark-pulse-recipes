@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spark vLLM Recipe",
+  "description": "Recipe configuration for deploying LLM models via vLLM.",
+  "type": "object",
+  "required": ["name", "container", "command"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for this recipe.",
+      "minLength": 1
+    },
+    "container": {
+      "type": "string",
+      "description": "Docker image name to use (e.g., vllm-node, vllm-node-mxfp4).",
+      "minLength": 1
+    },
+    "command": {
+      "type": "string",
+      "description": "vLLM serve command template with {placeholder} interpolation.",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of what this recipe does."
+    },
+    "model": {
+      "type": "string",
+      "description": "HuggingFace model ID for --setup downloads (e.g., org/model-name)."
+    },
+    "cluster_only": {
+      "type": "boolean",
+      "description": "Set to true if this model requires cluster mode (Ray distributed execution)."
+    },
+    "solo_only": {
+      "type": "boolean",
+      "description": "Set to true if this model can only run on a single node."
+    },
+    "build_args": {
+      "type": "array",
+      "description": "Extra build arguments for build-and-copy.sh (e.g., --exp-mxfp4, --pre-tf).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mods": {
+      "type": "array",
+      "description": "Mod paths or patches to apply (e.g., mods/some-patch).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default CLI-overridable settings for the vLLM serve command.",
+      "properties": {
+        "port": {
+          "type": "number",
+          "description": "Listen port for the vLLM serve endpoint."
+        },
+        "host": {
+          "type": "string",
+          "description": "Host address to bind (e.g., 0.0.0.0)."
+        },
+        "tensor_parallel": {
+          "type": "number",
+          "description": "Number of GPUs for tensor parallelism."
+        },
+        "gpu_memory_utilization": {
+          "type": "number",
+          "description": "Fraction of GPU memory to use for the model (0.0-1.0)."
+        },
+        "max_model_len": {
+          "type": "number",
+          "description": "Maximum context length for the model."
+        },
+        "max_num_batched_tokens": {
+          "type": "number",
+          "description": "Maximum number of tokens per batch."
+        }
+      },
+      "additionalProperties": true
+    },
+    "env": {
+      "type": "object",
+      "description": "Environment variables to pass into the container.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

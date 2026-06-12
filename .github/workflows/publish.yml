@@ -1,0 +1,38 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'recipes/*.yaml'
+      - 'index.yaml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish to registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Generate index.yaml
+        run: node packages/inventory/index.mjs
+
+      - name: Setup Delivery Station
+        uses: delivery-station/setup-ds-action@v1
+        with:
+          plugins: ds-porter
+
+      - name: Publish all recipes + index
+        run: node packages/publish/index.mjs --all
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

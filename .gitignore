@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.egg-info
+*.tar.gz
+*.oci.json
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Virtual environments
+.venv/
+venv/
+
+# Test artifacts
+test-recipes/
+test-output*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated (recreated by CI)
+index.yaml
+recipes/*/ds.manifest.yaml

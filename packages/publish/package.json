@@ -1,0 +1,9 @@
+{
+  "name": "spark-recipes-publish",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Thin ds porter push wrapper for publishing recipe artifacts",
+  "scripts": {
+    "push": "node index.mjs"
+  }
+}

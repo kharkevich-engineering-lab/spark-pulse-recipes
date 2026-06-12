@@ -1,0 +1,10 @@
+{
+  "name": "spark-recipes-inventory",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Generate a global index.yaml listing all recipes with their metadata and artifact references",
+  "scripts": {
+    "generate": "node index.mjs"
+  },
+  "dependencies": {}
+}

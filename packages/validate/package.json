@@ -1,0 +1,10 @@
+{
+  "name": "spark-recipes-validate",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Validate Spark vLLM recipe YAML against the canonical JSON Schema",
+  "scripts": {
+    "validate": "node index.mjs"
+  },
+  "dependencies": {}
+}

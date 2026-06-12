@@ -9,8 +9,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.semver.outputs.new_release_version }}
+      published: ${{ steps.semver.outputs.new_release_published }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Semantic Release
+        id: semver
+        uses: cycjimmy/semantic-release-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
     name: Publish to registry
+    needs: release
+    if: needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,6 +52,6 @@ jobs:
           plugins: ds-porter
 
       - name: Publish all recipes + index
-        run: node packages/publish/index.mjs --all
+        run: node packages/publish/index.mjs --all --version ${{ needs.release.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

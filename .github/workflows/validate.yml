@@ -24,7 +24,7 @@ jobs:
       - name: List recipes
         id: set-recipes
         run: |
-          echo "recipes=$(ls recipes/*.yaml | xargs)" >> $GITHUB_OUTPUT
+          echo "recipes=$(ls recipes/*.yaml | xargs -n 1 | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   validate:
     name: Validate recipe schema
@@ -43,4 +43,4 @@ jobs:
           node-version: 26
 
       - name: Validate ${{ matrix.recipe }}
-        run: node packages/validate/index.mjs --dir recipes/${{ matrix.recipe }}
+        run: node packages/validate/index.mjs --dir ${{ matrix.recipe }}

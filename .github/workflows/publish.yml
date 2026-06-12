@@ -53,7 +53,7 @@ jobs:
         with:
           plugins: ds-porter
 
-      - name: Publish all recipes + index
-        run: node packages/publish/index.mjs --all --version ${{ needs.release.outputs.tag }}
+      - name: Publish all recipes
+        run: node packages/publish/index.mjs --version ${{ needs.release.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

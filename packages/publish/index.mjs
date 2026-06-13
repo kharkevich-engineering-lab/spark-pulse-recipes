@@ -70,8 +70,8 @@ function generateManifest(recipesDir, version) {
   return lines.join('\n') + '\n';
 }
 
-function pushWithManifest(manifestPath, registry, namespace, version) {
-  const ref = `${registry}/${namespace}/spark-recipes:${version}`;
+function pushWithManifest(manifestPath, registry, namespace, repository, version) {
+  const ref = `${registry}/${namespace}/${repository}:${version}`;
 
   console.log(`pushing: ${ref}`);
 
@@ -113,6 +113,7 @@ function main() {
   const recipesDir = resolve(args.values['recipes-dir']);
   const registry = args.values.registry ?? DEFAULT_REGISTRY;
   const namespace = args.values.namespace ?? DEFAULT_NAMESPACE;
+  const repository = args.values.repository ?? DEFAULT_NAMESPACE;
   const dryRun = args.values['dry-run'];
 
   // Resolve version: explicit arg > default
@@ -127,7 +128,7 @@ function main() {
     console.log(`manifest:\n${manifestYaml}`);
     console.log(
       `# dry-run: would execute:\n` +
-      `#   ds porter push ${registry}/${namespace}/spark-recipes:${version} --manifest=${manifestPath}`
+      `#   ds porter push ${registry}/${namespace}/${repository}:${version} --manifest=${manifestPath}`
     );
     return;
   }
@@ -140,7 +141,7 @@ function main() {
   writeFileSync(manifestPath, manifestYaml, 'utf-8');
   console.log(`wrote manifest: ${manifestPath}`);
 
-  const success = pushWithManifest(manifestPath, registry, namespace, version);
+  const success = pushWithManifest(manifestPath, registry, namespace, repository, version);
   if (!success) process.exit(1);
 
   console.log('done: manifest published');

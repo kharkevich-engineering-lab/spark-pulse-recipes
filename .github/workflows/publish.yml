@@ -52,6 +52,13 @@ jobs:
         uses: delivery-station/setup-ds-action@v1
         with:
           plugins: ds-porter
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config: |
+            auth:
+              credentials:
+                - registry: ghcr.io
+                  username: ${{ github.actor }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish all recipes
         run: node packages/publish/index.mjs --namespace ${{ github.repository_owner }} --repository ${{ github.event.repository.name }} --version ${{ needs.release.outputs.tag }}

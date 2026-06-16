@@ -24,6 +24,7 @@ import {
 import { resolve, join, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
+import { parseYaml } from '../lib/yaml.mjs';
 
 const DEFAULT_REGISTRY = 'ghcr.io';
 const DEFAULT_NAMESPACE = 'sparkrecipes';
@@ -45,10 +46,24 @@ function generateManifest(recipesDir, version) {
     process.exit(1);
   }
 
-  const manifests = files.map((f) => ({
-    path: f,
-    mediaType: 'application/vnd.delivery-station.recipe.v1+yaml',
-  }));
+  // Read each recipe YAML and extract metadata for per-recipe annotations
+  const manifests = files.map((f) => {
+    const recipePath = join(recipesDir, f);
+    const raw = readFileSync(recipePath, 'utf-8');
+    const data = parseYaml(raw);
+
+    return {
+      path: f,
+      mediaType: 'application/vnd.delivery-station.recipe.v1+yaml',
+      annotations: {
+        name: data.name ?? f,
+        model: data.model ?? '',
+        container: data.container ?? '',
+        solo_only: String(data.solo_only ?? false),
+        cluster_only: String(data.cluster_only ?? false),
+      },
+    };
+  });
 
   const lines = [
     'artifact-type: application/vnd.delivery-station.recipe.index.v1+json',
@@ -65,6 +80,12 @@ function generateManifest(recipesDir, version) {
   for (const m of manifests) {
     lines.push(`  - path: ${m.path}`);
     lines.push(`    mediaType: ${m.mediaType}`);
+    lines.push(`    annotations:`);
+    lines.push(`      name: ${m.annotations.name}`);
+    lines.push(`      model: ${m.annotations.model}`);
+    lines.push(`      container: ${m.annotations.container}`);
+    lines.push(`      solo_only: "${m.annotations.solo_only}"`);
+    lines.push(`      cluster_only: "${m.annotations.cluster_only}"`);
   }
 
   return lines.join('\n') + '\n';

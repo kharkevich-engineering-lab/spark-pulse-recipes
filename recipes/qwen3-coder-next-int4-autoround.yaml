@@ -1,0 +1,32 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3-coder-next-int4-autoround.yaml
+recipe_version: "2"
+name: Qwen3-Coder-Next-int4-Autoround
+model: Intel/Qwen3-Coder-Next-int4-AutoRound
+description: >-
+  Qwen3-Coder-Next in Intel INT4-AutoRound on a single node, 256k context.
+  Needs a vLLM mod to load the AutoRound weights at all.
+
+engine: vllm
+
+constraints:
+  solo_only: true
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/fix-qwen3-next-autoround
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+    args: >-
+      --enable-auto-tool-choice --tool-call-parser qwen3_coder
+      --load-format instanttensor --enable-prefix-caching
+  # vLLM only: a vLLM mod fixes AutoRound weight loading, and instanttensor is
+  # a Spark-vLLM-image loader.

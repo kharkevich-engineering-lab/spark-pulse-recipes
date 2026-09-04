@@ -1,35 +1,49 @@
-# Recipe: MiniMax-M2-AWQ
-# vLLM serving MiniMax-M2-AWQ with Ray distributed backend
-
+# Converted in place from this repo's own v1 copy of the upstream
+# eugr/spark-vllm-docker recipes/minimax-m2-awq.yaml. This repo's copy differs
+# from upstream deliberately: it loads with fastsafetensors rather than
+# instanttensor, and that difference is preserved here.
+recipe_version: "2"
 name: MiniMax-M2-AWQ
-container: vllm-node
-
 model: QuantTrio/MiniMax-M2-AWQ
+description: >-
+  MiniMax-M2 in QuantTrio's AWQ quantisation with tp=2 across a multi-node
+  cluster. No patches and a stock loader, so it is one of the few imported
+  recipes that also carries an SGLang block.
 
-cluster_only: true
-solo_only: false
+engine: vllm
 
-mods: []
-build_args: []
+constraints:
+  solo_only: false
+  cluster_only: true
 
-defaults:
+params:
   port: 8000
   host: 0.0.0.0
   tensor_parallel: 2
   gpu_memory_utilization: 0.8
   max_model_len: 128000
 
-env: {}
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --load-format fastsafetensors --enable-auto-tool-choice
+      --tool-call-parser minimax_m2 --reasoning-parser minimax_m2
+  sglang:
+    # Plausible, not verified on hardware: AWQ is a first-class SGLang
+    # quantisation, MiniMax-M2 is a supported architecture there, and this
+    # recipe uses no mods, the default image and no vLLM-only loader.
+    #
+    # SGLang spells the parsers differently from vLLM (minimax-m2 /
+    # minimax-append-think rather than minimax_m2). Those names come from
+    # SGLang's own parser registry, not from a run on a Spark, so treat tool
+    # calling and reasoning extraction as untested here.
+    args: >-
+      --tool-call-parser minimax-m2 --reasoning-parser minimax-append-think
+      --chunked-prefill-size 8192
+  # SGLang needs at least 2 nodes for this model too; constraints apply to both
+  # engines, and SGLang's own multi-node path adds --enable-dp-attention
+  # automatically.
 
-command: |
-  vllm serve QuantTrio/MiniMax-M2-AWQ \
-      --port {port} \
-      --host {host} \
-      --gpu-memory-utilization {gpu_memory_utilization} \
-      -tp {tensor_parallel} \
-      --distributed-executor-backend ray \
-      --max-model-len {max_model_len} \
-      --load-format fastsafetensors \
-      --enable-auto-tool-choice \
-      --tool-call-parser minimax_m2 \
-      --reasoning-parser minimax_m2
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

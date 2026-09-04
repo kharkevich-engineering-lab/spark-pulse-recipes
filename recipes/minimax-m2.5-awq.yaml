@@ -1,0 +1,33 @@
+# Imported from eugr/spark-vllm-docker recipes/minimax-m2.5-awq.yaml
+recipe_version: "2"
+name: MiniMax-M2.5-AWQ
+model: cyankiwi/MiniMax-M2.5-AWQ-4bit
+description: >-
+  MiniMax-M2.5 in cyankiwi's 4-bit AWQ quantisation with tp=2 across a
+  multi-node cluster.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 128000
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --trust-remote-code --load-format instanttensor --enable-auto-tool-choice
+      --tool-call-parser minimax_m2 --reasoning-parser minimax_m2
+  # vLLM only: --load-format instanttensor exists only in the Spark vLLM image.
+  # Its sibling minimax-m2-awq.yaml, which loads with fastsafetensors, does
+  # carry an SGLang block.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

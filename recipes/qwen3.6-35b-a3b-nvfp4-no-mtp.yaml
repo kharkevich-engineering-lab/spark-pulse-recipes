@@ -1,0 +1,38 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3.6-35b-a3b-nvfp4-no-mtp.yaml
+recipe_version: "2"
+name: Qwen3.6-35B-A3B-NVFP4-Marlin-No-MTP
+model: nvidia/Qwen3.6-35B-A3B-NVFP4
+description: >-
+  Qwen3.6-35B-A3B in NVIDIA's NVFP4 quantisation through vLLM's Marlin MoE
+  backend, without the MTP draft. Same settings as its MTP sibling otherwise.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.4
+  max_model_len: 262144
+  max_num_batched_tokens: 8192
+  max_num_seqs: 4
+
+engines:
+  vllm:
+    image: vllm-node
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+    args: >-
+      --trust-remote-code --kv-cache-dtype fp8 --attention-backend flashinfer
+      --moe-backend marlin --enable-chunked-prefill --async-scheduling
+      --enable-prefix-caching --load-format fastsafetensors --reasoning-parser qwen3
+      --tool-call-parser qwen3_xml --enable-auto-tool-choice
+  # vLLM only: the NVFP4 MoE path here is vLLM's Marlin backend, which has
+  # no SGLang equivalent on sm_121.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

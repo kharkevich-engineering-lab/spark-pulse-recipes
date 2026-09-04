@@ -1,0 +1,45 @@
+# Imported from eugr/spark-vllm-docker recipes/3x-spark-cluster/qwen3.5-397b-int4-autoround.yaml
+# Upstream notes: if a node shuts down, cap its GPU clocks with
+# `sudo nvidia-smi -lgc 200,2150`.
+recipe_version: "2"
+name: Qwen3.5-397B-INT4-Autoround (PP=3)
+model: Intel/Qwen3.5-397B-A17B-int4-AutoRound
+description: >-
+  Qwen3.5-397B-A17B in Intel INT4-AutoRound, spread over a 3-node mesh in
+  pipeline-parallel mode. Three nodes cannot do tensor parallelism (397B has
+  no factor of 3), so the split is pp=3 with tp=1 on each node.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+  min_nodes: 3
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  pipeline_parallel: 3
+  gpu_memory_utilization: 0.7
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+  max_num_seqs: 10
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/fix-qwen3.5-chat-template
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+    args: >-
+      --kv-cache-dtype fp8 --enable-prefix-caching --enable-auto-tool-choice
+      --tool-call-parser qwen3_coder --reasoning-parser qwen3 --trust-remote-code
+      --chat-template unsloth.jinja --load-format instanttensor
+  # vLLM only. The chat template arrives through a vLLM mod, the weights load
+  # through vLLM's instanttensor loader, and INT4-AutoRound is served by vLLM's
+  # Marlin kernels — none of which SGLang has.
+
+# Upstream also passes --distributed-executor-backend ray. Spark Pulse never
+# uses Ray, and its vLLM engine strips the flag, so it is not carried over.

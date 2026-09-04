@@ -1,0 +1,42 @@
+# Imported from eugr/spark-vllm-docker recipes/step-3.7-flash-fp8.yaml
+# Upstream note: 2+ Sparks only, no-Ray mode recommended.
+recipe_version: "2"
+name: Step-3.7-Flash-FP8
+model: stepfun-ai/Step-3.7-Flash-FP8
+description: >-
+  Step-3.7-Flash in FP8 across two Sparks at tp=2 with a 256k context. Budgets
+  GPU memory in GiB through the gpu-mem-util-gb mod rather than as a fraction,
+  and keeps max_num_seqs at 2 because the KV cache is the binding constraint.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  max_model_len: 262144
+  max_num_seqs: 2
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/step-3.7-flash
+      - mods/gpu-mem-util-gb
+    args: >-
+      --trust-remote-code --gpu-memory-utilization-gb 108 --enable-auto-tool-choice
+      --reasoning-parser step3p5 --tool-call-parser step3p5 --load-format safetensors
+      --kv-cache-dtype fp8
+  # vLLM only: two vLLM mods, one of which replaces the memory flag entirely.
+
+# Upstream's gpu_memory_utilization default is 108 — GiB, not a fraction,
+# because mods/gpu-mem-util-gb swaps in --gpu-memory-utilization-gb. It cannot
+# live in the engine-neutral params (a 0-1 fraction on every engine) and stays
+# literal in the vLLM args.
+#
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

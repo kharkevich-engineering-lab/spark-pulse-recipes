@@ -1,0 +1,38 @@
+# Imported from eugr/spark-vllm-docker recipes/4x-spark-cluster/minimax-m2.5.yaml
+recipe_version: "2"
+name: MiniMax-M2.5
+model: MiniMaxAI/MiniMax-M2.5
+description: >-
+  MiniMax-M2.5 at full precision across a 4-node cluster with tp=4. The
+  unquantised checkpoint is far too large for one 128 GB GB10, hence the
+  4-node floor.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+  min_nodes: 4
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 4
+  gpu_memory_utilization: 0.9
+  max_model_len: 128000
+
+engines:
+  vllm:
+    image: vllm-node
+    env:
+      # Only meaningful under Ray, which Spark Pulse does not use; kept so the
+      # recipe still records what upstream ran with.
+      VLLM_DISTRIBUTED_EXECUTOR_CONFIG: '{"placement_group_options":{"strategy":"SPREAD"}}'
+    args: >-
+      --trust-remote-code --load-format instanttensor --enable-auto-tool-choice
+      --tool-call-parser minimax_m2 --reasoning-parser minimax_m2_append_think
+  # vLLM only: --load-format instanttensor is a loader that exists only in the
+  # Spark vLLM image.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

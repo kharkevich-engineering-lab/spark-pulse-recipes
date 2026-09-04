@@ -1,0 +1,35 @@
+# Imported from eugr/spark-vllm-docker recipes/step-3.7-flash-nvfp4.yaml
+# Upstream note: 2+ Sparks only.
+recipe_version: "2"
+name: Step-3.7-Flash-NVFP4
+model: stepfun-ai/Step-3.7-Flash-NVFP4
+description: >-
+  Step-3.7-Flash in NVFP4 across two Sparks at tp=2 with a 256k context. The
+  NVFP4 weights are small enough to use a plain memory fraction, unlike the
+  FP8 recipe.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/step-3.7-flash
+    args: >-
+      --trust-remote-code --enable-auto-tool-choice --reasoning-parser step3p5
+      --tool-call-parser step3p5 --load-format instanttensor
+  # vLLM only: the mods/step-3.7-flash patch and instanttensor loading.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

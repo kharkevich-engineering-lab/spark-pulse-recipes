@@ -1,0 +1,45 @@
+# Imported from eugr/spark-vllm-docker recipes/gemma4-26b-a4b.yaml
+recipe_version: "2"
+name: Gemma4-26B-A4B
+model: google/gemma-4-26B-A4B-it
+description: >-
+  Gemma4-26B-A4B served from the BF16 checkpoint with online FP8 quantisation
+  and an FP8 KV cache. A plain MoE with no patches and no custom loader, which
+  is why it is one of the few imported recipes that can also run on SGLang.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+  max_num_batched_tokens: 8192
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --load-format safetensors --enable-prefix-caching --enable-auto-tool-choice
+      --tool-call-parser gemma4 --reasoning-parser gemma4 --quantization fp8
+      --kv-cache-dtype fp8
+  sglang:
+    # Plausible, not verified on hardware: the checkpoint is stock BF16
+    # safetensors, the recipe applies no mods and uses the default image, and
+    # SGLang has the same online --quantization fp8 path.
+    #
+    # The gemma4 tool-call and reasoning parsers are deliberately NOT carried
+    # over: SGLang's parser registry names differ per model family and no
+    # gemma4 entry is confirmed for the pinned v0.5.10.post1 image, so tool
+    # calls would come back as plain text rather than being mis-parsed.
+    # max_num_batched_tokens has no SGLang param_flag, so the equivalent
+    # --chunked-prefill-size is set here instead.
+    args: --quantization fp8 --chunked-prefill-size 8192
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

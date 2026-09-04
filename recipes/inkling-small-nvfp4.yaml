@@ -1,0 +1,45 @@
+# Imported from eugr/spark-vllm-docker recipes/inkling-small-nvfp4.yaml
+recipe_version: "2"
+name: Inkling-Small-NVFP4
+model: thinkingmachines/Inkling-Small-NVFP4
+description: >-
+  Inkling Small in NVFP4 with MTP speculative decoding, tp=2 across a two-node
+  DGX Spark cluster. Needs three vLLM mods: an SM12x paged-KV patch, the page
+  cache drop that keeps UMA loading from OOMing, and the hybrid draft loader.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+  max_num_seqs: 2
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/inkling-sm12-paged-kv
+      - mods/drop-caches
+      - mods/instanttensor-hybrid-draft-loader
+    env:
+      LAMPORT_RS_SCONV: "0"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      VLLM_USE_AOT_COMPILE: "1"
+    args: >-
+      --trust-remote-code --tokenizer-mode inkling --enable-auto-tool-choice
+      --tool-call-parser inkling --reasoning-parser inkling
+      --load-format instanttensor --quantization nvfp4 --enable-prefix-caching
+      --enable-chunked-prefill --async-scheduling
+      --compilation-config '{{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}}'
+      --speculative-config '{{"method":"mtp","num_speculative_tokens":1}}'
+  # vLLM only: three vLLM mods, instanttensor loading, vLLM's inkling tokenizer
+  # mode and an MTP speculative config.
+
+# num_speculative_tokens is vLLM-specific and is inlined into the args.

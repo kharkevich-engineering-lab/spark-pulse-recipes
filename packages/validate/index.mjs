@@ -1,174 +1,280 @@
 /**
- * Validate Spark vLLM recipe YAML against the canonical JSON Schema.
+ * Validate Spark Pulse recipes against the canonical JSON Schema.
  *
- * Recipe format:
- *   name: Human-readable name          (required)
- *   container: docker-image-name       (required)
- *   command: |                         (required)
- *     vllm serve model/name \
- *         --port {port} \
- *         --host {host}
+ * The schemas in `schemas/` are copied from spark-pulse, which owns the
+ * format. `recipe.schema.json` is a `oneOf` over two versions:
  *
- *   description: ...                   (optional)
- *   model: org/model-name              (optional)
- *   cluster_only: false                (optional)
- *   solo_only: false                   (optional)
- *   build_args: [...]                  (optional)
- *   mods: [...]                        (optional)
- *   defaults: { port, host, ... }      (optional)
- *   env: { KEY: val }                 (optional)
+ *   v1 — the upstream spark-vllm-docker shape: `name` + `container` +
+ *        a vLLM `command` template. Still valid, never removed.
+ *   v2 — `recipe_version: "2"`, engine-neutral `params`, per-engine
+ *        overrides under `engines`.
  *
- * The JSON Schema is external and can be consumed by VS Code, IDE extensions,
- * and other tooling. See spark-recipe.schema.json for the full definition.
+ * Dispatch is on `recipe_version`, so exactly one branch of the `oneOf` can
+ * match any given document.
  *
- * No external dependencies — uses only Node.js built-in modules.
+ * No external dependencies — the Draft-07 subset below covers what these
+ * schemas use: `$ref` (resolved through an `$id` registry, since the refs are
+ * URLs we must not fetch), `oneOf`, `type`, `enum`, `required`,
+ * `properties`, `additionalProperties` (boolean and schema),
+ * `propertyNames`, `items`, `dependencies`, `minLength`, `minimum`,
+ * `maximum` and `exclusiveMinimum`.
  *
  * Usage:
- *   node packages/validate/index.mjs --dir recipes/minimax-m2-awq.yaml
+ *   node packages/validate/index.mjs                     # whole recipes/ tree
+ *   node packages/validate/index.mjs --dir recipes/x.yaml
+ *   node packages/validate/index.mjs --dir recipes/4x-spark-cluster
  *
- * Exits 0 on success, 1 on validation error.
+ * Exits 0 when every recipe is valid, 1 otherwise.
  */
 
 import { readFileSync, statSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parseYaml } from '../lib/yaml.mjs';
-
-// ---------------------------------------------------------------------------
-// Load external JSON Schema
-// ---------------------------------------------------------------------------
+import { findRecipes } from '../lib/recipes.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const schemaPath = resolve(__dirname, '..', '..', 'spark-recipe.schema.json');
-const SCHEMA = JSON.parse(readFileSync(schemaPath, 'utf-8'));
+const ROOT = resolve(__dirname, '..', '..');
+const SCHEMA_DIR = resolve(ROOT, 'schemas');
+const DEFAULT_RECIPES_DIR = resolve(ROOT, 'recipes');
 
 // ---------------------------------------------------------------------------
-// Simple JSON Schema validator (subset for our recipe format)
+// Schema registry
 // ---------------------------------------------------------------------------
+
+const SCHEMA_FILES = [
+  'recipe.schema.json',
+  'recipe-v1.schema.json',
+  'recipe-v2.schema.json',
+];
+
+/** Load every published schema, keyed by `$id` so `$ref` resolves offline. */
+function loadSchemas() {
+  const byId = new Map();
+  let entry = null;
+  for (const file of SCHEMA_FILES) {
+    const schema = JSON.parse(readFileSync(join(SCHEMA_DIR, file), 'utf-8'));
+    if (schema.$id) byId.set(schema.$id, schema);
+    if (file === 'recipe.schema.json') entry = schema;
+  }
+  if (!entry) throw new Error('schemas/recipe.schema.json is missing');
+  return { entry, byId };
+}
+
+// ---------------------------------------------------------------------------
+// Draft-07 subset validator
+// ---------------------------------------------------------------------------
+
+function typeOf(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (Number.isInteger(value)) return 'integer';
+  if (typeof value === 'number') return 'number';
+  return typeof value; // string | boolean | object
+}
+
+function matchesType(value, expected) {
+  const actual = typeOf(value);
+  const types = Array.isArray(expected) ? expected : [expected];
+  return types.some((t) => {
+    if (t === 'number') return actual === 'number' || actual === 'integer';
+    if (t === 'object') return actual === 'object';
+    return actual === t;
+  });
+}
+
+function join_(path, key) {
+  return path ? `${path}.${key}` : String(key);
+}
 
 /**
- * Validate a parsed YAML object against the JSON Schema.
- * Returns { valid: true } or { valid: false, errors: string[] }.
+ * Validate `data` against `schema`, appending `{path, message}` problems.
+ * Returns the problem list (empty when valid).
  */
-function validateAgainstSchema(data, schema) {
-  const errors = [];
+function validate(data, schema, registry, path = '', errors = []) {
+  if (schema === true || schema === undefined) return errors;
+  if (schema === false) {
+    errors.push({ path, message: 'value is not allowed here' });
+    return errors;
+  }
 
-  // Check required fields
-  if (schema.required) {
-    for (const field of schema.required) {
-      if (data[field] === undefined || data[field] === null) {
-        errors.push(`.: must have required property '${field}'`);
-      }
+  if (schema.$ref) {
+    const target = registry.get(schema.$ref);
+    if (!target) throw new Error(`unresolvable $ref: ${schema.$ref}`);
+    return validate(data, target, registry, path, errors);
+  }
+
+  if (schema.type && !matchesType(data, schema.type)) {
+    const want = Array.isArray(schema.type) ? schema.type.join(' or ') : schema.type;
+    errors.push({ path, message: `must be of type ${want}, got ${typeOf(data)}` });
+    return errors; // further keywords would only add noise
+  }
+
+  if (schema.enum && !schema.enum.some((v) => v === data)) {
+    errors.push({
+      path,
+      message: `must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(', ')}`,
+    });
+  }
+
+  if (schema.oneOf) {
+    const branches = schema.oneOf.map((sub) => validate(data, sub, registry, path, []));
+    const passed = branches.filter((e) => e.length === 0).length;
+    if (passed !== 1) {
+      const detail = branches
+        .map((e, i) => `  branch ${i + 1}: ${e.map((x) => `${x.path || '.'}: ${x.message}`).join('; ') || 'matched'}`)
+        .join('\n');
+      errors.push({
+        path,
+        message:
+          passed === 0
+            ? `does not match any known recipe version\n${detail}`
+            : `matches ${passed} recipe versions at once, which is ambiguous\n${detail}`,
+      });
     }
   }
 
-  // Validate types for defined properties
-  if (schema.properties) {
-    for (const [key, propSchema] of Object.entries(schema.properties)) {
-      const value = data[key];
-      if (value === undefined || value === null) continue;
+  if (typeof data === 'string') {
+    if (schema.minLength !== undefined && data.length < schema.minLength) {
+      errors.push({ path, message: `must be at least ${schema.minLength} character(s) long` });
+    }
+    if (schema.pattern && !new RegExp(schema.pattern).test(data)) {
+      errors.push({ path, message: `must match ${schema.pattern}` });
+    }
+  }
 
-      if (propSchema.type) {
-        let valid = true;
+  if (typeof data === 'number') {
+    if (schema.minimum !== undefined && data < schema.minimum) {
+      errors.push({ path, message: `must be >= ${schema.minimum}` });
+    }
+    if (schema.maximum !== undefined && data > schema.maximum) {
+      errors.push({ path, message: `must be <= ${schema.maximum}` });
+    }
+    if (schema.exclusiveMinimum !== undefined && data <= schema.exclusiveMinimum) {
+      errors.push({ path, message: `must be > ${schema.exclusiveMinimum}` });
+    }
+    if (schema.exclusiveMaximum !== undefined && data >= schema.exclusiveMaximum) {
+      errors.push({ path, message: `must be < ${schema.exclusiveMaximum}` });
+    }
+  }
 
-        if (propSchema.type === 'string') {
-          if (typeof value !== 'string') valid = false;
-          if (propSchema.minLength && value.length < propSchema.minLength) {
-            valid = false;
+  if (Array.isArray(data) && schema.items) {
+    data.forEach((item, i) => validate(item, schema.items, registry, `${path}[${i}]`, errors));
+  }
+
+  if (typeOf(data) === 'object') {
+    for (const key of schema.required ?? []) {
+      if (data[key] === undefined || data[key] === null) {
+        errors.push({ path, message: `must have required property '${key}'` });
+      }
+    }
+
+    const known = new Set(Object.keys(schema.properties ?? {}));
+    for (const [key, value] of Object.entries(data)) {
+      if (schema.propertyNames) {
+        validate(key, schema.propertyNames, registry, join_(path, key), errors);
+      }
+      if (known.has(key)) {
+        validate(value, schema.properties[key], registry, join_(path, key), errors);
+      } else if (schema.additionalProperties === false) {
+        errors.push({ path: join_(path, key), message: 'is not a recognised property' });
+      } else if (typeOf(schema.additionalProperties) === 'object') {
+        validate(value, schema.additionalProperties, registry, join_(path, key), errors);
+      }
+    }
+
+    for (const [key, dep] of Object.entries(schema.dependencies ?? {})) {
+      if (data[key] === undefined) continue;
+      if (Array.isArray(dep)) {
+        for (const needed of dep) {
+          if (data[needed] === undefined) {
+            errors.push({ path, message: `'${key}' requires '${needed}'` });
           }
-        } else if (propSchema.type === 'number') {
-          if (typeof value !== 'number') valid = false;
-        } else if (propSchema.type === 'boolean') {
-          if (typeof value !== 'boolean') valid = false;
-        } else if (propSchema.type === 'array') {
-          if (!Array.isArray(value)) valid = false;
-        } else if (propSchema.type === 'object') {
-          if (typeof value !== 'object' || Array.isArray(value)) valid = false;
         }
-
-        if (!valid) {
-          errors.push(`.: ${key} must be of type ${propSchema.type}`);
-        }
-      }
-
-      // Recurse into nested objects
-      if (propSchema.type === 'object' && propSchema.properties && typeof value === 'object') {
-        const nestedResult = validateAgainstSchema(value, {
-          type: 'object',
-          properties: propSchema.properties,
-          required: propSchema.required,
-        });
-        for (const err of nestedResult.errors) {
-          errors.push(`${key}${err.replace(':.', `.${key}`)}`);
-        }
+      } else {
+        validate(data, dep, registry, path, errors);
       }
     }
   }
 
-  if (errors.length > 0) {
-    return { valid: false, errors };
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Reporting
+// ---------------------------------------------------------------------------
+
+function describe(data) {
+  const version = data.recipe_version === undefined ? '1' : String(data.recipe_version);
+  if (version === '2') {
+    const engines = Object.keys(data.engines ?? {});
+    return `v2, ${data.model}, engines: ${engines.length ? engines.join('+') : 'generic'}`;
   }
-  return { valid: true };
+  return `v1, ${data.container}`;
 }
 
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
-function parseArgsList() {
-  try {
-    return parseArgs({
-      options: {
-        dir: { type: 'string' },
-      },
-      strict: false,
-    });
-  } catch {
-    return {};
-  }
-}
-
 function main() {
-  const args = parseArgsList();
-  const recipePath = resolve(args.values.dir ?? '.');
-  const isDir = statSync(recipePath).isDirectory();
+  const { values } = parseArgs({
+    options: { dir: { type: 'string' }, quiet: { type: 'boolean', default: false } },
+    strict: false,
+  });
 
-  // Support both --dir ./recipes/minimax-m2-awq.yaml (flat file)
-  // and --dir ./recipes/minimax-m2-awq (directory with recipe.yaml)
-  const targetPath = isDir ? resolve(recipePath, 'recipe.yaml') : recipePath;
-
-  // Read recipe
-  let raw;
+  const target = values.dir ? resolve(values.dir) : DEFAULT_RECIPES_DIR;
+  let files;
   try {
-    raw = readFileSync(targetPath, 'utf-8');
-  } catch (err) {
-    console.error(`error: ${targetPath} not found`);
+    files = statSync(target).isDirectory() ? findRecipes(target) : [target];
+  } catch {
+    console.error(`error: ${target} not found`);
     process.exit(1);
   }
 
-  // Parse YAML (inline parser, no external deps)
-  let data;
-  try {
-    data = parseYaml(raw);
-  } catch (err) {
-    console.error(`error: failed to parse YAML: ${err.message}`);
+  if (files.length === 0) {
+    console.error(`error: no recipes found under ${target}`);
     process.exit(1);
   }
 
-  // Validate against JSON Schema
-  const result = validateAgainstSchema(data, SCHEMA);
+  const { entry, byId } = loadSchemas();
+  let failed = 0;
 
-  if (!result.valid) {
-    console.error('validation failed:');
-    result.errors.forEach((err) => {
-      console.error(`  - ${err}`);
-    });
-    process.exit(1);
+  for (const file of files) {
+    const label = relative(ROOT, file);
+    let data;
+    try {
+      data = parseYaml(readFileSync(file, 'utf-8'));
+    } catch (err) {
+      console.error(`FAIL ${label}\n  - .: ${err.message}`);
+      failed++;
+      continue;
+    }
+
+    if (typeOf(data) !== 'object') {
+      console.error(`FAIL ${label}\n  - .: recipe must be a YAML mapping`);
+      failed++;
+      continue;
+    }
+
+    const errors = validate(data, entry, byId);
+    if (errors.length) {
+      console.error(`FAIL ${label}`);
+      for (const e of errors) console.error(`  - ${e.path || '.'}: ${e.message}`);
+      failed++;
+      continue;
+    }
+
+    if (!values.quiet) console.log(`ok   ${label} — ${data.name} (${describe(data)})`);
   }
 
-  console.log(`ok: ${data.name} (${data.container})`);
-  process.exit(0);
+  const total = files.length;
+  if (failed) {
+    console.error(`\n${failed} of ${total} recipe(s) failed validation`);
+    process.exit(1);
+  }
+  console.log(`\n${total} recipe(s) valid`);
 }
 
 main();

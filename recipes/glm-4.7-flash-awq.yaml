@@ -1,0 +1,49 @@
+# Imported from eugr/spark-vllm-docker recipes/glm-4.7-flash-awq.yaml
+# Upstream warning: vLLM's implementation is suboptimal for this model even
+# with the (currently disabled) speed patch. Expect ~40 tok/s generation both
+# solo and in a cluster; a cluster helps prompt processing, not generation.
+recipe_version: "2"
+name: GLM-4.7-Flash-AWQ
+model: cyankiwi/GLM-4.7-Flash-AWQ-4bit
+description: >-
+  GLM-4.7-Flash in cyankiwi's 4-bit AWQ quantisation, served as
+  "glm-4.7-flash". Fits one GB10 at tp=1 with a 198k context, and scales to a
+  cluster if you want faster prefill.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 202752
+  max_num_batched_tokens: 4096
+  max_num_seqs: 64
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --tool-call-parser glm47 --reasoning-parser glm45 --enable-auto-tool-choice
+      --served-model-name glm-4.7-flash
+  sglang:
+    # Plausible, not verified on hardware: AWQ 4-bit is a first-class SGLang
+    # quantisation, the recipe applies no mods and uses the default image, and
+    # nothing in the vLLM args is vLLM-specific beyond the parser names.
+    #
+    # SGLang v0.5.10.post1 has no `glm47` tool parser; `glm45` is the closest
+    # thing it ships and is unverified against GLM-4.7's output format, so
+    # treat tool calling here as untested.
+    # max_num_batched_tokens has no SGLang param_flag; --chunked-prefill-size
+    # carries the same value.
+    args: >-
+      --served-model-name glm-4.7-flash --tool-call-parser glm45
+      --reasoning-parser glm45 --chunked-prefill-size 4096
+
+# Upstream's served_model_name default is not one of the engine-neutral
+# params, so its value is inlined into each engine's args.

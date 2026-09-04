@@ -1,0 +1,47 @@
+# Imported from eugr/spark-vllm-docker recipes/4x-spark-cluster/nemotron-3-ultra-nvfp4.yaml
+recipe_version: "2"
+name: Nemotron-3-Ultra-NVFP4
+model: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4
+description: >-
+  Nemotron-3-Ultra-550B-A55B in NVFP4 with tp=4 across four DGX Spark nodes. A
+  Mamba/attention hybrid, so it carries mamba cache flags and an MTP draft;
+  max_num_seqs is deliberately 2 because the KV plus SSM state is the binding
+  constraint, not compute.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+  min_nodes: 4
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 4
+  gpu_memory_utilization: 0.85
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+  max_num_seqs: 2
+
+engines:
+  vllm:
+    image: vllm-node
+    env:
+      VLLM_FLOAT32_MATMUL_PRECISION: high
+    args: >-
+      --dtype auto --load-format instanttensor --attention-backend TRITON_ATTN
+      --uvicorn-log-level warning --disable-uvicorn-access-log --kv-cache-dtype fp8
+      --moe-backend marlin --mamba-cache-mode align --mamba_ssm_cache_dtype float32
+      --generation-config vllm --no-scheduler-reserve-full-isl
+      --max-parallel-loading-workers 1 -cc.mode 0 -cc.cudagraph_mode FULL_DECODE_ONLY
+      --cudagraph-capture-sizes 5 10 15 20
+      --speculative-config '{{"method":"mtp","num_speculative_tokens":4,"moe_backend":"triton","attention_backend":"TRITON_ATTN"}}'
+      --enable-prefix-caching --enable-flashinfer-autotune --reasoning-parser nemotron_v3
+      --enable-auto-tool-choice --tool-call-parser qwen3_xml
+  # vLLM only: instanttensor loading, vLLM's Marlin NVFP4 MoE backend, vLLM's
+  # mamba cache controls and a vLLM MTP speculative config. None of it maps
+  # onto SGLang flags.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

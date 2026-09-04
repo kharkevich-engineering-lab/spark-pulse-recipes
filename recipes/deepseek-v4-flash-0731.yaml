@@ -1,0 +1,66 @@
+# Imported from eugr/spark-vllm-docker recipes/deepseek-v4-flash-0731.yaml
+recipe_version: "2"
+name: DeepSeek-V4-Flash-0731
+model: deepseek-ai/DeepSeek-V4-Flash-0731
+description: >-
+  DeepSeek V4 Flash (0731) on two Sparks using the B12X serving stack: B12X
+  MoE, linear and attention backends plus the dspark speculative method. Needs
+  the b12x image, which is built with --exp-b12x.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: true
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.85
+  max_num_batched_tokens: 8192
+  max_num_seqs: 8
+
+engines:
+  vllm:
+    image: vllm-node-b12x
+    build_args:
+      - --exp-b12x
+    mods:
+      - mods/instanttensor-hybrid-draft-loader
+    env:
+      CUTE_DSL_ARCH: sm_121a
+      VLLM_USE_AOT_COMPILE: "1"
+      VLLM_USE_BREAKABLE_CUDAGRAPH: "0"
+      VLLM_USE_MEGA_AOT_ARTIFACT: "1"
+      VLLM_MEMORY_PROFILE_INCLUDE_ATTN: "1"
+      VLLM_USE_FLASHINFER_SAMPLER: "1"
+      VLLM_USE_B12X_WO_PROJECTION: "1"
+      VLLM_USE_B12X_MHC: "1"
+      VLLM_USE_B12X_FP8_GEMM: "1"
+      VLLM_USE_B12X_MOE: "1"
+      VLLM_USE_B12X_SPARSE_INDEXER: "1"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_MOE_SKIP_PADDING: "0"
+      B12X_MLA_SM120_UNIFIED: "1"
+      B12X_MOE_FORCE_A8: "1"
+    args: >-
+      --trust-remote-code --kv-cache-dtype fp8 --block-size 256
+      --max-model-len auto --enable-prefix-caching --tokenizer-mode deepseek_v4
+      --tool-call-parser deepseek_v4 --enable-auto-tool-choice
+      --reasoning-parser deepseek_v4
+      --reasoning-config '{{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}}'
+      --default-chat-template-kwargs.thinking=true
+      --default-chat-template-kwargs.reasoning_effort=high
+      --load-format instanttensor --moe-backend b12x --linear-backend b12x
+      --attention-backend B12X --max-cudagraph-capture-size 48
+      --compilation-config '{{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}}'
+      --speculative-config '{{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","attention_backend":"B12X"}}'
+  # vLLM only: the b12x image, B12X MoE/linear/attention backends, a vLLM mod
+  # for the hybrid draft loader, and instanttensor loading.
+
+# Upstream's max_model_len default is the literal string "auto", which is not a
+# number and so cannot live in the engine-neutral params (the schema wants an
+# integer there); --max-model-len auto stays in the vLLM args. Upstream's
+# block_size, max_cudagraph_capture_size and num_speculative_tokens defaults
+# are likewise vLLM-specific and are inlined into the args.

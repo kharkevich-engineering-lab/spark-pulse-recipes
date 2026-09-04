@@ -1,91 +1,93 @@
 /**
- * ds-porter push wrapper for publishing recipe YAML files via manifest.
+ * ds-porter push wrapper: publishes every recipe as one OCI artifact under a
+ * single collection index, with per-recipe annotations.
+ *
+ * The annotations matter: spark-pulse's OCI browser reads recipe metadata
+ * straight out of the manifest, without pulling or parsing any YAML, so
+ * whatever is not annotated here shows as unknown in its UI. Alongside the
+ * name/model/container/solo_only/cluster_only it already carried, each entry
+ * now also states `recipe_version` and the `engines` the recipe declares.
+ *
+ * Recipes are collected recursively, so the 3x/4x/8x cluster subdirectories
+ * are published too.
  *
  * Usage:
- *   # Push all recipes with manifest
- *   node packages/publish/index.mjs
- *
- *   # Push with explicit version
+ *   node packages/publish/index.mjs                  # push everything
  *   node packages/publish/index.mjs --version 1.0.0
+ *   node packages/publish/index.mjs --dry-run        # print the manifest only
  *
- *   # Dry-run: generate manifest and print command (no push)
- *   node packages/publish/index.mjs --dry-run
- *
- * Requires `ds` CLI installed and configured (e.g. via setup-ds-action).
+ * Requires the `ds` CLI, except in --dry-run.
  *
  * Exits 0 on success, 1 on error.
  */
 
-import {
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
-import { resolve, join, basename } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { parseYaml } from '../lib/yaml.mjs';
+import { findRecipes, readRecipe, recipePath, summarise } from '../lib/recipes.mjs';
 
 const DEFAULT_REGISTRY = 'ghcr.io';
 const DEFAULT_NAMESPACE = 'sparkrecipes';
 const DEFAULT_VERSION = '1.0.0';
 const RECIPES_DIR = 'recipes';
+const RECIPE_MEDIA_TYPE = 'application/vnd.delivery-station.recipe.v1+yaml';
+const INDEX_ARTIFACT_TYPE = 'application/vnd.delivery-station.recipe.index.v1+json';
 
-// ---------------------------------------------------------------------------
-// Push helpers
-// ---------------------------------------------------------------------------
+/**
+ * Quote a value for the manifest. Recipe names carry parentheses, equals
+ * signs and dots — and could carry a colon — so nothing goes in bare.
+ */
+function q(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
 
-function generateManifest(recipesDir, version) {
-  const files = readdirSync(recipesDir, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith('.yaml'))
-    .map((e) => e.name)
-    .sort();
-
+function collectRecipes(recipesDir) {
+  const files = findRecipes(recipesDir);
   if (files.length === 0) {
-    console.error(`error: no .yaml files found in ${recipesDir}/`);
+    console.error(`error: no recipe files found in ${recipesDir}/`);
     process.exit(1);
   }
-
-  // Read each recipe YAML and extract metadata for per-recipe annotations
-  const manifests = files.map((f) => {
-    const recipePath = join(recipesDir, f);
-    const raw = readFileSync(recipePath, 'utf-8');
-    const data = parseYaml(raw);
-
-    return {
-      path: f,
-      mediaType: 'application/vnd.delivery-station.recipe.v1+yaml',
-      annotations: {
-        name: data.name ?? f,
-        model: data.model ?? '',
-        container: data.container ?? '',
-        solo_only: String(data.solo_only ?? false),
-        cluster_only: String(data.cluster_only ?? false),
-      },
-    };
+  return files.map((file) => {
+    const rel = recipePath(recipesDir, file);
+    try {
+      return { path: rel, summary: summarise(readRecipe(file), rel) };
+    } catch (err) {
+      console.error(`error: ${rel}: ${err.message}`);
+      process.exit(1);
+    }
   });
+}
+
+function generateManifest(recipesDir, version) {
+  const entries = collectRecipes(recipesDir).sort((a, b) => a.path.localeCompare(b.path));
 
   const lines = [
-    'artifact-type: application/vnd.delivery-station.recipe.index.v1+json',
+    `artifact-type: ${INDEX_ARTIFACT_TYPE}`,
     'annotations:',
-    `  name: spark-recipes`,
+    '  name: spark-recipes',
     `  version: ${version}`,
-    `  description: Spark Pulse recipe collection`,
-    `  url: https://github.com/kharkevich-engineering-lab/spark-pulse-recipes`,
+    '  description: Spark Pulse recipe collection',
+    '  url: https://github.com/kharkevich-engineering-lab/spark-pulse-recipes',
     '  vendor: Kharkevich Engineering Lab',
     '  license: MIT',
     'manifests:',
   ];
 
-  for (const m of manifests) {
-    lines.push(`  - path: ${m.path}`);
-    lines.push(`    mediaType: ${m.mediaType}`);
-    lines.push(`    annotations:`);
-    lines.push(`      name: ${m.annotations.name}`);
-    lines.push(`      model: ${m.annotations.model}`);
-    lines.push(`      container: ${m.annotations.container}`);
-    lines.push(`      solo_only: "${m.annotations.solo_only}"`);
-    lines.push(`      cluster_only: "${m.annotations.cluster_only}"`);
+  for (const { path, summary } of entries) {
+    lines.push(`  - path: ${q(path)}`);
+    lines.push(`    mediaType: ${RECIPE_MEDIA_TYPE}`);
+    lines.push('    annotations:');
+    lines.push(`      name: ${q(summary.name)}`);
+    lines.push(`      model: ${q(summary.model)}`);
+    lines.push(`      container: ${q(summary.container)}`);
+    lines.push(`      recipe_version: ${q(summary.recipe_version)}`);
+    lines.push(`      engines: ${q(summary.engines.join(','))}`);
+    lines.push(`      solo_only: ${q(summary.solo_only)}`);
+    lines.push(`      cluster_only: ${q(summary.cluster_only)}`);
+    if (summary.min_nodes !== null && summary.min_nodes !== undefined) {
+      lines.push(`      min_nodes: ${q(summary.min_nodes)}`);
+    }
   }
 
   return lines.join('\n') + '\n';
@@ -93,33 +95,23 @@ function generateManifest(recipesDir, version) {
 
 function pushWithManifest(manifestPath, registry, namespace, repository, version) {
   const ref = `${registry}/${namespace}/${repository}:${version}`;
-
   console.log(`pushing: ${ref}`);
 
-  const result = spawnSync(
-    'ds',
-    ['porter', 'push', ref, '--manifest', manifestPath],
-    {
-      cwd: resolve('.'),
-      stdio: 'inherit',
-      encoding: 'utf-8',
-    }
-  );
+  const result = spawnSync('ds', ['porter', 'push', ref, '--manifest', manifestPath], {
+    cwd: resolve('.'),
+    stdio: 'inherit',
+    encoding: 'utf-8',
+  });
 
   if (result.status !== 0) {
     console.error('error: failed to push manifest');
     return false;
   }
-
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 function main() {
-  const args = parseArgs({
+  const { values } = parseArgs({
     options: {
       'recipes-dir': { type: 'string', default: RECIPES_DIR },
       registry: { type: 'string', default: DEFAULT_REGISTRY },
@@ -131,40 +123,27 @@ function main() {
     strict: false,
   });
 
-  const recipesDir = resolve(args.values['recipes-dir']);
-  const registry = args.values.registry ?? DEFAULT_REGISTRY;
-  const namespace = args.values.namespace ?? DEFAULT_NAMESPACE;
-  const repository = args.values.repository ?? DEFAULT_NAMESPACE;
-  const dryRun = args.values['dry-run'];
+  const recipesDir = resolve(values['recipes-dir'] ?? RECIPES_DIR);
+  const registry = values.registry ?? DEFAULT_REGISTRY;
+  const namespace = values.namespace ?? DEFAULT_NAMESPACE;
+  const repository = values.repository ?? DEFAULT_NAMESPACE;
+  const version = values.version ?? DEFAULT_VERSION;
+  const manifestPath = join(recipesDir, 'ds.manifest.yaml');
+  const manifestYaml = generateManifest(recipesDir, version);
 
-  // Resolve version: explicit arg > default
-  const version = args.values.version ?? DEFAULT_VERSION;
-
-  // -----------------------------------------------------------------------
-  // Dry-run mode: generate manifest and print command
-  // -----------------------------------------------------------------------
-  if (dryRun) {
-    const manifestYaml = generateManifest(recipesDir, version);
-    const manifestPath = join(recipesDir, 'ds.manifest.yaml');
+  if (values['dry-run']) {
     console.log(`manifest:\n${manifestYaml}`);
     console.log(
-      `# dry-run: would execute:\n` +
-      `#   ds porter push ${registry}/${namespace}/${repository}:${version} --manifest=${manifestPath}`
+      '# dry-run: would execute:\n' +
+        `#   ds porter push ${registry}/${namespace}/${repository}:${version} --manifest=${manifestPath}`
     );
     return;
   }
 
-  // -----------------------------------------------------------------------
-  // Manifest-based push
-  // -----------------------------------------------------------------------
-  const manifestYaml = generateManifest(recipesDir, version);
-  const manifestPath = join(recipesDir, 'ds.manifest.yaml');
   writeFileSync(manifestPath, manifestYaml, 'utf-8');
   console.log(`wrote manifest: ${manifestPath}`);
 
-  const success = pushWithManifest(manifestPath, registry, namespace, repository, version);
-  if (!success) process.exit(1);
-
+  if (!pushWithManifest(manifestPath, registry, namespace, repository, version)) process.exit(1);
   console.log('done: manifest published');
 }
 

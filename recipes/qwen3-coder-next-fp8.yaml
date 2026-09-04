@@ -1,0 +1,36 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3-coder-next-fp8.yaml
+# Upstream keeps mods/fix-qwen3-coder-next commented out; it fixes slowness and
+# a crash in cluster mode (vllm-project/vllm#33857). Add it back if you hit
+# that. It is a vLLM mod, so it would not be portable either way.
+recipe_version: "2"
+name: Qwen3-Coder-Next-FP8
+model: Qwen/Qwen3-Coder-Next-FP8
+description: >-
+  Qwen3-Coder-Next in native FP8 with tp=2 and a 128k context, FlashInfer
+  attention and an FP8 KV cache.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 131072
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --enable-auto-tool-choice --tool-call-parser qwen3_coder --kv-cache-dtype fp8
+      --load-format instanttensor --attention-backend flashinfer
+      --enable-prefix-caching
+  # vLLM only: --load-format instanttensor exists only in the Spark vLLM image,
+  # and the known cluster fix is a vLLM mod.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

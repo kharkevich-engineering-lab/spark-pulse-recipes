@@ -1,0 +1,36 @@
+# Imported from eugr/spark-vllm-docker recipes/gemma4-26b-a4b-nvfp4.yaml
+recipe_version: "2"
+name: Gemma4-26B-A4B-NVFP4
+model: nvidia/Gemma-4-26B-A4B-NVFP4
+description: >-
+  Gemma4-26B-A4B in NVFP4 with an MTP draft model. Upstream marks it solo only
+  even though the default tensor_parallel is 2, so the default is kept as
+  written and the constraint decides.
+
+engine: vllm
+
+constraints:
+  solo_only: true
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.7
+  max_model_len: 262144
+  max_num_batched_tokens: 8192
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --load-format instanttensor --enable-prefix-caching --enable-auto-tool-choice
+      --tool-call-parser gemma4 --reasoning-parser gemma4 --kv-cache-dtype fp8
+      --speculative-config '{{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4,"moe_backend":"triton"}}'
+  # vLLM only: instanttensor loading and a vLLM MTP speculative config naming a
+  # separate draft checkpoint. Its sibling gemma4-26b-a4b.yaml, which has
+  # neither, does carry an SGLang block.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

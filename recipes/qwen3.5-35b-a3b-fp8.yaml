@@ -1,0 +1,41 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3.5-35b-a3b-fp8.yaml
+recipe_version: "2"
+name: Qwen35-35B-A3B
+model: Qwen/Qwen3.5-35B-A3B-FP8
+description: >-
+  Qwen3.5-35B-A3B in native FP8 with tp=2, a 256k context and FlashInfer
+  attention. Note this is the upstream recipe, which carries two vLLM mods;
+  spark-pulse also bundles a leaner, engine-portable recipe for the same model.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      # Fixes slowness and a cluster crash (vllm-project/vllm#33857).
+      - mods/fix-qwen3-coder-next
+      - mods/fix-qwen3.5-chat-template
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+    args: >-
+      --enable-auto-tool-choice --tool-call-parser qwen3_coder --kv-cache-dtype fp8
+      --load-format fastsafetensors --attention-backend flashinfer
+      --enable-prefix-caching --chat-template unsloth.jinja
+  # vLLM only: both mods are vLLM patches and --chat-template unsloth.jinja
+  # names a file one of them installs.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

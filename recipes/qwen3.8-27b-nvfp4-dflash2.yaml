@@ -1,0 +1,40 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3.8-27b-nvfp4-dflash2.yaml
+# Upstream note: tp=1 on a solo Spark, tp=2 in a cluster (the default below).
+recipe_version: "2"
+name: Qwen3.8-27B-NVFP4-DFlash2
+model: RadixArk/Qwen3.8-27B-NVFP4
+description: >-
+  Qwen3.8-27B in RadixArk's NVFP4 quantisation with the z-lab DFlash2 draft
+  model, a 256k context and an FP8 KV cache. The draft is sharded to the same
+  tensor-parallel degree as the target, so the {tensor_parallel} placeholder
+  appears inside the speculative config.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.7
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+  max_num_seqs: 8
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --trust-remote-code --kv-cache-dtype fp8 --enable-chunked-prefill
+      --async-scheduling --enable-prefix-caching
+      --speculative-config '{{"method":"dflash","model":"z-lab/Qwen3.8-27B-DFlash2","num_speculative_tokens":8,"draft_tensor_parallel_size":{tensor_parallel}}}'
+      --load-format instanttensor --reasoning-parser qwen3
+      --tool-call-parser qwen3_xml --enable-auto-tool-choice
+  # vLLM only: instanttensor loading and a DFlash2 --speculative-config.
+
+# num_speculative_tokens is vLLM-specific and is inlined into the args;
+# {tensor_parallel} is kept as a placeholder because it is a neutral param and
+# must track whatever the deploy request sets.

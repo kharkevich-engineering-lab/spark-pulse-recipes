@@ -1,0 +1,45 @@
+# Imported from eugr/spark-vllm-docker recipes/4x-spark-cluster/qwen3.5-397b-int4-autoround.yaml
+# Upstream notes: benchmarked at 37 tok/s single-user and 103 tok/s aggregate
+# over 4 concurrent requests on 4x DGX Spark. Needs NVIDIA driver 580.x; 590.x
+# has a CUDAGraph deadlock on GB10.
+recipe_version: "2"
+name: Qwen3.5-397B-INT4-Autoround
+model: Intel/Qwen3.5-397B-A17B-int4-AutoRound
+description: >-
+  Qwen3.5-397B-A17B in Intel INT4-AutoRound with tp=4 across four DGX Spark
+  nodes. Context is held to 32k so the Marlin kernels and the KV cache both
+  fit at gpu_memory_utilization 0.78.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  # Upstream declares no topology flag; the 4x directory and tp=4 do.
+  cluster_only: true
+  min_nodes: 4
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 4
+  gpu_memory_utilization: 0.78
+  max_model_len: 32768
+  max_num_batched_tokens: 8192
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/fix-qwen3-coder-next
+      - mods/fix-qwen35-tp4-marlin
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+    args: >-
+      --tool-call-parser qwen3_coder --reasoning-parser qwen3 --enable-auto-tool-choice
+      --kv-cache-dtype fp8 --enable-prefix-caching --trust-remote-code
+  # vLLM only: two vLLM mods carry the recipe — the coder-next parser fix and
+  # the tp=4 Marlin fix. SGLang has no mod mechanism at all.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

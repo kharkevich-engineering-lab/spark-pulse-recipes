@@ -1,0 +1,40 @@
+# Imported from eugr/spark-vllm-docker recipes/qwen3.6-35b-a3b-nvfp4.yaml
+recipe_version: "2"
+name: Qwen3.6-35B-A3B-NVFP4-Marlin
+model: nvidia/Qwen3.6-35B-A3B-NVFP4
+description: >-
+  Qwen3.6-35B-A3B in NVIDIA's NVFP4 quantisation through vLLM's Marlin MoE
+  backend, with a 3-token MTP draft. gpu_memory_utilization is only 0.4
+  because the NVFP4 weights are small and the rest is left to the KV cache.
+
+engine: vllm
+
+constraints:
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.4
+  max_model_len: 262144
+  max_num_batched_tokens: 8192
+  max_num_seqs: 4
+
+engines:
+  vllm:
+    image: vllm-node
+    env:
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+    args: >-
+      --trust-remote-code --kv-cache-dtype fp8 --attention-backend flashinfer
+      --moe-backend marlin --enable-chunked-prefill --async-scheduling
+      --enable-prefix-caching --load-format fastsafetensors --reasoning-parser qwen3
+      --tool-call-parser qwen3_xml --enable-auto-tool-choice
+      --speculative-config '{{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}}'
+  # vLLM only: the NVFP4 MoE path here is vLLM's Marlin backend, and MTP
+  # speculative decoding is a vLLM --speculative-config method.
+
+# Upstream also passes --distributed-executor-backend ray; the vLLM engine
+# strips it, so it is not carried over.

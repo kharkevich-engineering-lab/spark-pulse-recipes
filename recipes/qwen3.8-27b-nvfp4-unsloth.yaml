@@ -1,0 +1,94 @@
+# New recipe, not an upstream import.
+#
+# Everything below is taken from the model card and config.json of
+# https://huggingface.co/unsloth/Qwen3.8-27B-NVFP4 (read 2026-09-03), from
+# eugr/spark-vllm-docker's own Qwen3.8-27B-NVFP4 recipe
+# (recipes/qwen3.8-27b-nvfp4-dflash2.yaml, which serves RadixArk's quant of the
+# same base model), and from section 1.5 of spark-pulse's native-runtime plan.
+# Where a setting is a judgement call rather than a documented one, the comment
+# next to it says so. Nothing here has been run on a Spark.
+#
+# What the checkpoint actually is:
+#   - Qwen3_5ForConditionalGeneration, model_type qwen3_5: a *dense* 27B with a
+#     vision encoder, not an MoE. 64 layers, hidden 5120, in a hybrid layout of
+#     16 x (3 x Gated DeltaNet -> FFN, then 1 x Gated Attention -> FFN), so only
+#     every fourth layer holds a full KV cache.
+#   - Mixed-precision compressed-tensors: NVFP4 (group size 16) on the MLP
+#     gate/up/down projections, FP8 on attention projections, lm_head and the
+#     last eight MLP blocks. ~23.4 GB of weights, ~19.9B parameters after
+#     quantisation. There is no MoE, so none of the --moe-backend choices the
+#     other NVFP4 recipes here make apply.
+#   - The config declares a static FP8 kv_cache_scheme, which is why
+#     --kv-cache-dtype fp8 below is a documented setting rather than a guess.
+#   - Native context 262,144, extensible to 1M with YaRN.
+recipe_version: "2"
+name: Qwen3.8-27B-NVFP4 (Unsloth)
+model: unsloth/Qwen3.8-27B-NVFP4
+description: >-
+  Qwen3.8-27B in Unsloth's Dynamic V3.0 NVFP4 quantisation: a dense
+  vision-language model with a Gated DeltaNet / attention hybrid stack, about
+  23 GB of weights, so one 128 GB GB10 serves it at tp=1 with the full 256k
+  context. vLLM only, because the checkpoint leaves lm_head in FP8.
+
+engine: vllm
+
+constraints:
+  # ~23 GB of weights fit one GB10 comfortably; nothing forces a cluster, and
+  # nothing about the checkpoint is known to break in one, so neither flag is
+  # set. tensor_parallel below is 1 rather than upstream's cluster-oriented 2.
+  solo_only: false
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  # 0.7, matching upstream's own Qwen3.8-27B-NVFP4 recipe. Deliberately not
+  # higher: on a GB10's unified memory, page-cache pressure during load shows
+  # up as an OOM (plan section 1.5), and 0.7 of 128 GB still leaves ~66 GB of
+  # KV cache after the ~23 GB of weights — ample, since three of every four
+  # layers are linear-attention and hold no KV at all.
+  gpu_memory_utilization: 0.7
+  # The model card's native context. It also documents YaRN for up to 1M, but
+  # the checkpoint ships no rope_scaling, so enabling that needs an explicit
+  # --hf-overrides and is left out rather than half-configured.
+  max_model_len: 262144
+  max_num_batched_tokens: 16384
+  # The card asks for long outputs on agentic work (262k reasoning + 131k
+  # final). Eight concurrent sequences is upstream's figure for the same model
+  # and keeps that budget reachable per request.
+  max_num_seqs: 8
+
+engines:
+  vllm:
+    image: vllm-node
+    args: >-
+      --trust-remote-code --kv-cache-dtype fp8 --enable-chunked-prefill
+      --async-scheduling --enable-prefix-caching --load-format instanttensor
+      --reasoning-parser qwen3 --tool-call-parser qwen3_xml
+      --enable-auto-tool-choice
+  # No SGLang block, on the model card's own evidence: "It also works with
+  # SGLang, but only with the MAIN version, because the lm_head is FP8 rather
+  # than 4-bit." The spark-pulse sglang engine pins
+  # lmsysorg/sglang:v0.5.10.post1-cu130, which is a release, not main, so an
+  # sglang block here would claim something the upstream author explicitly
+  # says does not hold on a released SGLang.
+
+# Deliberately NOT set, and why:
+#
+#   - No --speculative-config, even though the repo ships model_mtp.safetensors
+#     and the card advertises MTP. Upstream's verified speculative path for
+#     Qwen3.8-27B is the separate z-lab/Qwen3.8-27B-DFlash2 draft against
+#     RadixArk's quant, not this repo's in-tree MTP head, and vLLM's mtp method
+#     for qwen3_5 on sm_121 is untested here. Add it once someone has run it.
+#   - No --moe-backend. This is a dense model; the flag would be meaningless.
+#   - No vision flags. The card recommends raising video_preprocessor_config's
+#     longest_edge for hour-scale video, which is a change to the downloaded
+#     checkpoint rather than a serve flag, so it is left to the operator.
+#   - Sampling defaults (thinking: temperature 1.0 / top_p 0.95 / top_k 20;
+#     instruct: 0.7 / 0.80 / 20 with presence_penalty 1.5) are per-request
+#     values, not serve flags, so they are documented here rather than pinned.
+#
+# --load-format instanttensor mirrors upstream's Qwen3.8-27B-NVFP4 recipe. If
+# the Spark image's loader rejects this mixed-precision compressed-tensors
+# layout, --load-format auto is the safe fallback.

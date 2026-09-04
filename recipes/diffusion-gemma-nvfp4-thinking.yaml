@@ -1,0 +1,36 @@
+# Imported from eugr/spark-vllm-docker recipes/diffusion-gemma-nvfp4-thinking.yaml
+recipe_version: "2"
+name: Diffusion-Gemma-NVFP4-Thinking
+model: nvidia/diffusiongemma-26B-A4B-it-NVFP4
+description: >-
+  DiffusionGemma-26B-A4B-IT in NVFP4 on a single node, with Gemma4 thinking
+  enabled. The NVFP4 checkpoint halves the weight footprint against the BF16
+  recipe.
+
+engine: vllm
+
+constraints:
+  solo_only: true
+  cluster_only: false
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+
+engines:
+  vllm:
+    image: vllm-node
+    mods:
+      - mods/diffusiongemma
+    args: >-
+      --trust-remote-code --enable-auto-tool-choice --tool-call-parser gemma4
+      --load-format fastsafetensors --attention-backend TRITON_ATTN
+      --enable-prefix-caching --diffusion-config '{{"canvas_length":256}}'
+      --override-generation-config '{{"max_new_tokens": null}}'
+      --reasoning-parser gemma4
+      --default-chat-template-kwargs '{{"enable_thinking": true}}'
+  # vLLM only: diffusion decoding needs the mods/diffusiongemma patch and
+  # vLLM's --diffusion-config. SGLang has no diffusion decoding path and no
+  # mod mechanism.

@@ -1,41 +1,46 @@
-# Recipe: OpenAI GPT-OSS 120B
-# OpenAI's open source 120B MoE model with MXFP4 quantization and FlashInfer
-
+# Converted in place from this repo's own v1 copy of the upstream
+# eugr/spark-vllm-docker recipes/openai-gpt-oss-120b.yaml.
+recipe_version: "2"
 name: OpenAI-GPT-OSS-120B
-container: vllm-node-mxfp4
-
 model: openai/gpt-oss-120b
+description: >-
+  openai/gpt-oss-120b with MXFP4 weights and the FlashInfer attention backend
+  on a single node. Requires the vllm-node-mxfp4 image, which is a separate
+  build (--exp-mxfp4) and is not one of the images spark-pulse-engine
+  publishes yet.
 
-solo_only: true
-cluster_only: false
+engine: vllm
 
-mods: []
-build_args:
-  - --exp-mxfp4
+constraints:
+  solo_only: true
+  cluster_only: false
 
-defaults:
+params:
   port: 8000
   host: 0.0.0.0
   tensor_parallel: 1
   gpu_memory_utilization: 0.8
   max_num_batched_tokens: 8192
 
-env:
-  VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
-
-command: |
-  vllm serve openai/gpt-oss-120b \
-      --tool-call-parser openai \
-      --reasoning-parser openai_gptoss \
-      --enable-auto-tool-choice \
-      --gpu-memory-utilization {gpu_memory_utilization} \
-      --enable-prefix-caching \
-      --load-format fastsafetensors \
-      --quantization mxfp4 \
-      --mxfp4-backend CUTLASS \
-      --mxfp4-layers moe,qkv,o,lm_head \
-      --attention-backend FLASHINFER \
-      --kv-cache-dtype fp8 \
-      --max-num-batched-tokens {max_num_batched_tokens} \
-      --host {host} \
-      --port {port}
+engines:
+  vllm:
+    image: vllm-node-mxfp4
+    build_args:
+      - --exp-mxfp4
+    env:
+      VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8: "1"
+    args: >-
+      --tool-call-parser openai --reasoning-parser openai_gptoss
+      --enable-auto-tool-choice --enable-prefix-caching
+      --load-format fastsafetensors --quantization mxfp4 --mxfp4-backend CUTLASS
+      --mxfp4-layers moe,qkv,o,lm_head --attention-backend FLASHINFER
+      --kv-cache-dtype fp8
+  # vLLM only as written: it needs the build-only vllm-node-mxfp4 image and
+  # vLLM's --mxfp4-backend / --mxfp4-layers flags.
+  #
+  # Worth revisiting: section 1.5 of spark-pulse's native-runtime plan records
+  # gpt-oss-120b running under SGLang on two Sparks (with the older
+  # lmsysorg/sglang:spark tag and the tiktoken files mounted offline). That is
+  # a different image and a different quantisation path from this recipe, so an
+  # SGLang block here would be fiction — it belongs in its own recipe once the
+  # spark-pulse-engine sglang image is verified for it.

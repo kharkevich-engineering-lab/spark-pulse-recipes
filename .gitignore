@@ -33,4 +33,4 @@ Thumbs.db
 
 # Generated (recreated by CI)
 index.yaml
-recipes/*/ds.manifest.yaml
+ds.manifest.yaml

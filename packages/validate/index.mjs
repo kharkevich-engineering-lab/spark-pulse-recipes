@@ -27,11 +27,12 @@
  * Exits 0 when every recipe is valid, 1 otherwise.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parseYaml } from '../lib/yaml.mjs';
+import { findRecipes } from '../lib/recipes.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -201,21 +202,8 @@ function validate(data, schema, registry, path = '', errors = []) {
 }
 
 // ---------------------------------------------------------------------------
-// Recipe discovery
+// Reporting
 // ---------------------------------------------------------------------------
-
-/** Every `*.yaml` / `*.yml` under `dir`, recursively, in stable order. */
-export function findRecipes(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  )) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...findRecipes(full));
-    else if (/\.ya?ml$/.test(entry.name) && entry.name !== 'ds.manifest.yaml') out.push(full);
-  }
-  return out;
-}
 
 function describe(data) {
   const version = data.recipe_version === undefined ? '1' : String(data.recipe_version);

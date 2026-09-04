@@ -3,36 +3,20 @@ name: validate
 on:
   pull_request:
     paths:
-      - 'packages/validate/**'
-      - 'recipes/*.yaml'
+      - 'packages/**'
+      - 'schemas/**'
+      - 'recipes/**'
   push:
     branches: [main]
     paths:
-      - 'packages/validate/**'
-      - 'recipes/*.yaml'
+      - 'packages/**'
+      - 'schemas/**'
+      - 'recipes/**'
 
 jobs:
-  list-recipes:
-    name: List recipes to validate
-    runs-on: ubuntu-latest
-    outputs:
-      recipes: ${{ steps.set-recipes.outputs.recipes }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: List recipes
-        id: set-recipes
-        run: |
-          echo "recipes=$(ls recipes/*.yaml | xargs -n 1 | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
-
   validate:
     name: Validate recipe schema
-    needs: list-recipes
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        recipe: ${{fromJSON(needs.list-recipes.outputs.recipes)}}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -42,5 +26,13 @@ jobs:
         with:
           node-version: 26
 
-      - name: Validate ${{ matrix.recipe }}
-        run: node packages/validate/index.mjs --dir ${{ matrix.recipe }}
+      # Validates every recipe in the tree, subdirectories included, and
+      # reports each failure rather than stopping at the first.
+      - name: Validate recipes
+        run: node packages/validate/index.mjs
+
+      - name: Build the inventory
+        run: node packages/inventory/index.mjs
+
+      - name: Build the publish manifest
+        run: node packages/publish/index.mjs --dry-run

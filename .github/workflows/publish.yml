@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'recipes/*.yaml'
+      - 'recipes/**'
   workflow_dispatch:
 
 permissions:
@@ -44,6 +44,9 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 26
+
+      - name: Validate recipes
+        run: node packages/validate/index.mjs
 
       - name: Generate index.yaml
         run: node packages/inventory/index.mjs

@@ -1,0 +1,136 @@
+# New recipe, not an upstream import. The first llama.cpp recipe here, and the
+# first that pins a non-default engine image.
+#
+# Everything below is taken from the model card and the GGUF metadata of
+# https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf (read 2026-09-20),
+# from PrismML's announcement (https://prismml.com/news/bonsai-2-27b), and from
+# the `llama-cpp-prism` engine definition in spark-pulse-engine. Where a
+# setting is a judgement call rather than a documented one, the comment next to
+# it says so. Nothing here has been run on a Spark — the image it needs has not
+# been built yet.
+#
+# What the checkpoint actually is:
+#   - Qwen3.8-27B (architecture unchanged: 27.36B total, 64 hybrid-attention
+#     blocks, ~75% linear / ~25% full attention, SwiGLU, RoPE, RMSNorm)
+#     distilled to ternary weights. Every weight is one of {-1, 0, +1} with a
+#     shared FP16 scale per group of 128, across embeddings, attention
+#     projections, MLP projections and the LM head — no high-precision escape
+#     hatch behind a low-bit label. 1.72 bits/weight counting everything,
+#     against 16 for the FP16 original.
+#   - The weights are stored in a *rotated basis*: each matrix is transformed
+#     blockwise by an orthogonal Hadamard rotation (block 1024, fixed +/-1
+#     signs) before the ternary assignment, and the runtime applies the
+#     matching transform to activations. The file declares its rotation as
+#     metadata, so a runtime either applies the transform or refuses the file.
+#     This is the whole reason for the fork; see `engines` below.
+#   - Two packings, both in this one repo, which is why --hf-file is not
+#     optional: PQ2_0 stores each trit in a 2-bit slot (2.13 true bpw,
+#     7.21 GB), PTQ1_0 packs trits densely (1.75 true bpw, 5.95 GB).
+#   - PrismML report 84.78 across 14 thinking-mode benchmarks against 86.32 for
+#     Qwen3.8-27B FP16 — 98.2% of the aggregate at roughly a ninth of the size,
+#     and twelve points above a conventional IQ2_XXS build that is larger.
+#   - Context 262,144, inherited from the base model. Apache-2.0.
+#   - An optional Q8_0 vision tower (mmproj, 0.63 GB) ships alongside. Not used
+#     here; see the "deliberately NOT set" list at the end.
+recipe_version: "2"
+name: Bonsai-2-27B (ternary, llama.cpp)
+model: prism-ml/Ternary-Bonsai-2-27B-gguf
+description: >-
+  Qwen3.8-27B distilled to ternary weights — {-1, 0, +1} with FP16 group
+  scales, 1.72 bits per weight — so the whole 27B is 5.9 to 7.2 GB of GGUF
+  instead of 54 GB, at 98.2% of the full-precision benchmark aggregate per
+  PrismML, with the base model's 262K context. It runs only on PrismML's
+  llama.cpp fork, so the recipe pins the llama-cpp-prism image; stock
+  llama.cpp cannot read these files.
+
+engine: llama-cpp
+
+constraints:
+  # One GB10 holds this with room to spare: ~7 GB of weights against 128 GB of
+  # unified memory, which is the point of the format. Two nodes are possible
+  # through llama.cpp's RPC backend — a worker exposes its GPU, the head passes
+  # --rpc — and that is a demonstration of the cluster path, not a way to make
+  # this model faster. Splitting a 7 GB model over a wire cannot beat keeping
+  # it local. So neither flag is set and min_nodes is 1.
+  solo_only: false
+  cluster_only: false
+  min_nodes: 1
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  # The model's native context, and llama-server's --ctx-size.
+  max_model_len: 262144
+  # One slot, deliberately. llama-server divides --ctx-size across --parallel
+  # slots rather than giving each its own, so 262144 with two slots is 131072
+  # per request. The full context is the reason to run this model, so it gets
+  # the single slot. Raise max_num_seqs only alongside a proportionally smaller
+  # max_model_len — the product is the budget, not either number alone.
+  max_num_seqs: 1
+  # No tensor_parallel and no gpu_memory_utilization. The llama-cpp engine maps
+  # neither: llama.cpp has no tensor or pipeline parallelism, and it allocates
+  # what the layers and the context need rather than a fraction of the device.
+  # Both would be silently dropped, so stating them would be a claim the engine
+  # does not honour.
+
+engines:
+  llama-cpp:
+    # Not the default llama-cpp image. PrismML's ternary packings are not
+    # llama.cpp types: stock llama.cpp rejects PQ2_0 and PTQ1_0 as unknown,
+    # and loads a Q2_0 file without warning and answers nonsense, because it
+    # has no Hadamard activation runtime for the rotated basis described above.
+    # llama-cpp-prism is the same image built from the fork's kernels.
+    image: llama-cpp-prism
+    args: >-
+      --hf-file Ternary-Bonsai-2-27B-PQ2_0.gguf
+      -ngl 99 -fa on
+      --temp 1.0 --top-p 0.95 --top-k 20
+      --jinja
+    # --hf-file picks the packing, because `model:` names a repo that holds
+    #   both and -hf alone would not know which. PQ2_0 (7.21 GB) is the pick
+    #   here: PrismML measure it as the faster decode on the Blackwell cards
+    #   and faster at prompt processing everywhere, and a GB10 has no memory
+    #   pressure that would argue otherwise. Swap in
+    #   Ternary-Bonsai-2-27B-PTQ1_0.gguf (5.95 GB) where memory is tight or on
+    #   Ada-class hardware, where PrismML measure the dense packing ahead.
+    # -ngl 99 offloads every layer to the GPU, which is the card's own command.
+    # -fa on is not an optimisation to leave at its default here: the card's
+    #   run command carries it unconditionally and the fork's ternary
+    #   hybrid-attention kernels are written against that path. Nothing in this
+    #   recipe should remove it.
+    # --temp/--top-p/--top-k are the card's thinking-mode numbers (1.0 / 0.95 /
+    #   20). They are also carried in the GGUF as general.sampling.*, so a
+    #   client that reads model defaults would find them anyway; setting them
+    #   on the server makes the default explicit for clients that do not. The
+    #   card's instruct-mode alternative (0.7 / 0.80 / 20 with
+    #   presence_penalty 1.5) is a per-request choice, not a second recipe.
+    # --jinja makes llama-server use the chat template the GGUF itself carries
+    #   rather than a guessed one. Confirmed present: the repo's GGUF metadata
+    #   includes tokenizer.chat_template, and the template branches on the
+    #   usual `enable_thinking` kwarg (undefined or true means thinking) and on
+    #   `reasoning_effort`, which it accepts as xhigh (default), medium or low
+    #   and raises on anything else. The card adds that low "is not supported
+    #   and when selected the model will behave close to xhigh". With --jinja a
+    #   client sets these through chat_template_kwargs on the request.
+
+# Deliberately NOT set, and why:
+#
+#   - No --mmproj-file, so no vision. The repo ships a Q8_0 mmproj (0.63 GB)
+#     and the model scores 66.19 on the vision category, so the capability is
+#     real — but this is a text-only recipe until the llama-cpp-prism image has
+#     actually been built and run, and a multimodal flag that has never started
+#     a server is a claim, not a setting. Add --mmproj-file once it is
+#     verified; the card also notes the projector is usually kept off the GPU
+#     (--no-mmproj-offload) on cards where VRAM is tight, which a GB10 is not.
+#   - No --parallel above 1. It is what max_num_seqs maps to, and raising it
+#     divides the context rather than adding to it; see the comment on
+#     max_num_seqs.
+#   - No -c / --ctx-size in args. It comes from max_model_len through the
+#     engine's param_flags, and a second copy in args would be the one that
+#     silently won or the one that silently lost.
+#   - No second engine block. vLLM and SGLang read safetensors, not GGUF, and
+#     neither has the ternary kernels; there is no version of this recipe that
+#     runs anywhere but llama.cpp's prism build.
+#   - No speculative decoding. PrismML's demo repo ships a dspark drafter
+#     sidecar and its own binaries for it, which is a different image from the
+#     one this recipe pins. Add it once somebody has run it here.

@@ -81,9 +81,9 @@ the two versioned schemas, dispatching on `recipe_version`.
 
 ## Recipes
 
-37 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
-upstream's directory layout, plus one new NVFP4 recipe. "Engines" is what the
-recipe declares, not what has been proven on hardware.
+38 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
+upstream's directory layout, plus one new NVFP4 recipe and one llama.cpp one.
+"Engines" is what the recipe declares, not what has been proven on hardware.
 
 | Path | Name | Model | Engines | Topology |
 |---|---|---|---|---|
@@ -93,6 +93,7 @@ recipe declares, not what has been proven on hardware.
 | `4x-spark-cluster/qwen3.5-397b-a17B-fp8.yaml` | Qwen3.5-397B-A17B-FP8 | Qwen/Qwen3.5-397B-A17B-FP8 | vllm | cluster, min 4 |
 | `4x-spark-cluster/qwen3.5-397b-int4-autoround.yaml` | Qwen3.5-397B-INT4-Autoround | Intel/Qwen3.5-397B-A17B-int4-AutoRound | vllm | cluster, min 4 |
 | `8x-spark-cluster/glm-5.2-nvfp4.yaml` | GLM-5.2-NVFP4 (TP=8) | nvidia/GLM-5.2-NVFP4 | vllm | cluster, min 8 |
+| `bonsai-2-27b-ternary.yaml` | Bonsai-2-27B (ternary, llama.cpp) | prism-ml/Ternary-Bonsai-2-27B-gguf | **llama-cpp** | any |
 | `deepseek-v4-flash-0731.yaml` | DeepSeek-V4-Flash-0731 | deepseek-ai/DeepSeek-V4-Flash-0731 | vllm | cluster |
 | `deepseek-v4-flash.yaml` | DeepSeek-V4-Flash | deepseek-ai/DeepSeek-V4-Flash | vllm | cluster |
 | `diffusion-gemma-bf16-thinking.yaml` | Diffusion-Gemma-BF16-Thinking | google/diffusiongemma-26B-A4B-it | vllm | solo |
@@ -146,6 +147,12 @@ when it depends on any of:
   and the `--mamba-*` cache controls.
 - **A quantisation path that is vLLM's** — NVFP4 through vLLM's Marlin or
   CUTLASS MoE backends, INT4-AutoRound through Marlin.
+
+One recipe is neither: `bonsai-2-27b-ternary` runs on llama.cpp and nowhere
+else. It serves GGUF rather than safetensors, and its ternary packings need
+kernels that exist only in PrismML's llama.cpp fork — so it pins the
+`llama-cpp-prism` image, and there is no version of it for an engine that
+reads safetensors.
 
 Three recipes clear that bar: `gemma4-26b-a4b`, `glm-4.7-flash-awq` and
 `minimax-m2-awq`. Each is a plain dense or MoE checkpoint in a format SGLang

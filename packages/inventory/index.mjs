@@ -7,6 +7,8 @@
  * in, `engines` lists the engines the recipe declares (preferred first), and
  * the topology constraints are flattened out of `constraints` so the same
  * `solo_only` / `cluster_only` keys keep working for v1 and v2 alike.
+ * `serves` says what kind of endpoint the recipe starts (chat when the file
+ * does not say), so a browser can tell an embeddings recipe from a chat one.
  *
  * Recipes are discovered recursively, so the 3x/4x/8x cluster subdirectories
  * are included and their artifact names keep the directory (three different
@@ -84,6 +86,7 @@ function main() {
       solo_only: summary.solo_only,
       cluster_only: summary.cluster_only,
       min_nodes: summary.min_nodes,
+      serves: summary.serves,
       tags: [],
       artifactRef: `${registry}/${namespace}/${summary.artifactName}`,
       path: summary.path,

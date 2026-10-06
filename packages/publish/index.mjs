@@ -6,7 +6,8 @@
  * straight out of the manifest, without pulling or parsing any YAML, so
  * whatever is not annotated here shows as unknown in its UI. Alongside the
  * name/model/container/solo_only/cluster_only it already carried, each entry
- * now also states `recipe_version` and the `engines` the recipe declares.
+ * now also states `recipe_version`, the `engines` the recipe declares and what
+ * it `serves` (chat, embedding, …), which spark-pulse shows as a chip.
  *
  * Recipes are collected recursively, so the 3x/4x/8x cluster subdirectories
  * are published too.
@@ -85,6 +86,7 @@ function generateManifest(recipesDir, version) {
     lines.push(`      engines: ${q(summary.engines.join(','))}`);
     lines.push(`      solo_only: ${q(summary.solo_only)}`);
     lines.push(`      cluster_only: ${q(summary.cluster_only)}`);
+    lines.push(`      serves: ${q(summary.serves)}`);
     if (summary.min_nodes !== null && summary.min_nodes !== undefined) {
       lines.push(`      min_nodes: ${q(summary.min_nodes)}`);
     }

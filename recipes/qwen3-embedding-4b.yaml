@@ -1,0 +1,109 @@
+# New recipe, not an upstream import. The first that serves something other
+# than chat: `serves: embedding` makes spark-pulse render `--runner pooling` for
+# vLLM, refuse the recipe on every engine that does not claim embeddings, and
+# keep the run out of the benchmarks (llama-benchy drives chat completions).
+# It needs a spark-pulse that understands `serves`; an older one ignores the
+# field and starts a generative runner over an embedding checkpoint.
+#
+# Everything below is taken from the model card and config.json of
+# https://huggingface.co/Qwen/Qwen3-Embedding-4B (read 2026-10-06). Where a
+# setting is a judgement call rather than a documented one, the comment next to
+# it says so. Nothing here has been run on a Spark yet.
+#
+# What the checkpoint actually is:
+#   - A 4B text-embedding model on the Qwen3 base: 36 layers, hidden 2560,
+#     32 query heads over 8 KV heads of 128 (GQA), BF16 weights in two
+#     safetensors shards, 8.04 GB in all (4,021,774,336 parameters).
+#   - Its config.json declares `Qwen3ForCausalLM`. That is why the runner has
+#     to be stated: vLLM's `--runner auto` reads the architecture and would
+#     start a generator. spark-pulse adds `--runner pooling` from `serves`,
+#     which is what vLLM's pooling-models guide names for Qwen3-Embedding.
+#     Pooling is last-token, as `1_Pooling/config.json` declares; vLLM reads
+#     that sentence-transformers config itself.
+#   - Embeddings up to 2560 dimensions, with Matryoshka (MRL) support: a client
+#     may ask for any output size from 32 to 2560 and the truncated vector is
+#     still meaningful. That is a request parameter (`dimensions` on
+#     /v1/embeddings), not a server flag, so nothing below sets it.
+#   - Instruction-aware. Queries should be sent as
+#     `Instruct: {task description}\nQuery:{query}`; documents go in bare. The
+#     card reports a 1-5% retrieval gain from the instruction and recommends
+#     writing it in English even for other languages. This is the client's
+#     job — the server embeds whatever text it is handed.
+#   - 32K context, over 100 languages. Apache-2.0.
+recipe_version: "2"
+name: Qwen3-Embedding-4B
+model: Qwen/Qwen3-Embedding-4B
+description: >-
+  Qwen3-Embedding-4B on vLLM's pooling runner: up to 2560-dimensional
+  embeddings (Matryoshka, so any size down to 32), instruction-aware queries,
+  over 100 languages, Apache-2.0. Sized to sit beside a chat model on the same
+  Spark — about an eighth of the GPU memory, 8K tokens per input.
+
+serves: embedding
+
+engine: vllm
+
+constraints:
+  # An 8 GB model on a 128 GB node. A second node would only add a network
+  # hop to every request, and an embeddings server scales by running another
+  # copy rather than by splitting one.
+  solo_only: true
+  cluster_only: false
+
+params:
+  # No port. The point of this recipe is to run next to a chat model on the
+  # same node, and two recipes that both say 8000 collide; left unset, the
+  # control plane allocates one that is free on that node.
+  host: 0.0.0.0
+  # The memory budget, worked out rather than guessed. gpu_memory_utilization
+  # is a fraction of the *whole* device as vLLM sees it — a GB10's 128 GB of
+  # unified memory, about 119 GiB — not of what is left free.
+  #
+  #   budget       0.12 x 119 GiB                         = 14.3 GiB
+  #   weights      4.02e9 params x 2 bytes (BF16)         =  7.5 GiB
+  #   overhead     activations at an 8K-token batch,
+  #                CUDA graphs, the torch allocator       ~  2   GiB (judgement)
+  #   KV cache     what is left                           ~  4.8 GiB
+  #
+  #   KV per token  36 layers x 2 (K and V) x 8 KV heads
+  #                 x 128 head_dim x 2 bytes              = 147,456 B = 144 KiB
+  #   per input     8192 tokens x 144 KiB                 = 1.125 GiB
+  #   capacity      4.8 GiB / 144 KiB                     ~ 35,000 tokens
+  #
+  # So four full-length inputs at once, or a few dozen of the 256-1024-token
+  # chunks a retrieval index is usually built from. 0.10 would also start
+  # (about 2.5 GiB of KV, two full inputs), but the 2 GiB overhead is an
+  # estimate nobody has measured on this hardware yet, and 0.12 keeps a
+  # failure-to-start margin for it. The chat model beside it must leave this
+  # much unclaimed: its own fraction plus 0.12 has to stay under what the node
+  # can spare, and whichever starts second is the one that will find out.
+  gpu_memory_utilization: 0.12
+  # 8K, not the model's 32K. Embedding inputs are chunks, rarely whole
+  # documents, and an embedding is one prefill with nothing decoded after it,
+  # so vLLM refuses to start unless the KV cache can hold at least one input
+  # of max_model_len. At 32768 that one input alone is 4.5 GiB of KV, which
+  # would push the fraction past 0.15. Raise it alongside
+  # gpu_memory_utilization, not instead of it.
+  max_model_len: 8192
+  # No max_num_batched_tokens: vLLM sizes it for the runner it starts, and a
+  # value below max_model_len would be refused at startup for a pooling model
+  # anyway. No tensor_parallel: one GPU, and solo_only.
+
+engines:
+  vllm:
+    image: vllm-node
+    # No args. `--runner pooling` comes from `serves`, and writing it here
+    # would be a second place that has to agree with the first. The engine
+    # stops at the defaults on purpose until a run on a Spark says otherwise.
+
+# Deliberately NOT set, and why:
+#
+#   - No `--runner` / `--convert` in args; see above.
+#   - No `--hf-overrides` for the dimension. MRL truncation is per request, so
+#     one server answers every size a client asks for.
+#   - No sglang block. SGLang serves this model with `--is-embedding`, but
+#     spark-pulse does not render that flag and refuses an embedding recipe on
+#     SGLang rather than start it as a generator.
+#   - No `--kv-cache-dtype fp8`. It would roughly double the KV capacity, but
+#     the pooling path has not been run with it here, and the budget above
+#     does not need it.

@@ -57,6 +57,14 @@ engine's `args`. A `{placeholder}` in `args` is substituted from the resolved
 params, so `{{` and `}}` are literal braces (which is how the JSON blobs in
 `--speculative-config` survive).
 
+A v2 recipe may also say what it **serves**: `serves: chat` (the default when
+absent), `embedding`, `image`, `video` or `speech`. spark-pulse renders the
+runner the kind needs — `--runner pooling` for an embedding recipe on vLLM —
+refuses the recipe on an engine that does not serve that kind, and benchmarks
+only chat runs. The index and the published annotations carry `serves` for
+every recipe. A v1 recipe serves chat; the schema refuses any other value
+there.
+
 **v1 recipes remain valid.** v1 is the original
 [spark-vllm-docker](https://github.com/eugr/spark-vllm-docker) shape: `name`,
 `container` and a full vLLM `command` template. The validator accepts both;
@@ -81,8 +89,9 @@ the two versioned schemas, dispatching on `recipe_version`.
 
 ## Recipes
 
-38 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
-upstream's directory layout, plus one new NVFP4 recipe and one llama.cpp one.
+39 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
+upstream's directory layout, plus one new NVFP4 recipe, one llama.cpp one and
+one embeddings one.
 "Engines" is what the recipe declares, not what has been proven on hardware.
 
 | Path | Name | Model | Engines | Topology |
@@ -113,6 +122,7 @@ upstream's directory layout, plus one new NVFP4 recipe and one llama.cpp one.
 | `openai-gpt-oss-120b.yaml` | OpenAI-GPT-OSS-120B | openai/gpt-oss-120b | vllm | solo |
 | `qwen3-coder-next-fp8.yaml` | Qwen3-Coder-Next-FP8 | Qwen/Qwen3-Coder-Next-FP8 | vllm | any |
 | `qwen3-coder-next-int4-autoround.yaml` | Qwen3-Coder-Next-int4-Autoround | Intel/Qwen3-Coder-Next-int4-AutoRound | vllm | solo |
+| `qwen3-embedding-4b.yaml` | Qwen3-Embedding-4B (**serves embedding**) | Qwen/Qwen3-Embedding-4B | vllm | solo |
 | `qwen3.5-122b-fp8.yaml` | Qwen3.5-122B-FP8 | Qwen/Qwen3.5-122B-A10B-FP8 | vllm | cluster |
 | `qwen3.5-122b-int4-autoround.yaml` | Qwen3.5-122B-INT4-Autoround | Intel/Qwen3.5-122B-A10B-int4-AutoRound | vllm | any |
 | `qwen3.5-35b-a3b-fp8.yaml` | Qwen35-35B-A3B | Qwen/Qwen3.5-35B-A3B-FP8 | vllm | any |

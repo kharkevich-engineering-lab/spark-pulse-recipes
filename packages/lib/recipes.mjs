@@ -91,6 +91,19 @@ export function recipeConstraints(data) {
 }
 
 /**
+ * What a recipe serves: `chat`, `embedding`, `image`, `video` or `speech`.
+ *
+ * Absent means chat, and so does every v1 recipe: upstream's format has no
+ * such field and its command is a verbatim vLLM line, so the schema pins v1
+ * to chat. Reported for every recipe, chat included, so a reader of the index
+ * never has to know the default.
+ */
+export function recipeServes(data) {
+  if (recipeVersion(data) !== '2') return 'chat';
+  return data.serves ? String(data.serves) : 'chat';
+}
+
+/**
  * The artifact name for a recipe, derived from its path below `recipes/`.
  *
  * Not from the basename alone: three different recipes are called
@@ -136,6 +149,7 @@ export function summarise(data, relPath) {
     solo_only: constraints.solo_only,
     cluster_only: constraints.cluster_only,
     min_nodes: constraints.min_nodes,
+    serves: recipeServes(data),
     path: relPath,
   };
 }

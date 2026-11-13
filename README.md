@@ -122,6 +122,7 @@ one embeddings one.
 | `openai-gpt-oss-120b.yaml` | OpenAI-GPT-OSS-120B | openai/gpt-oss-120b | vllm | solo |
 | `qwen3-coder-next-fp8.yaml` | Qwen3-Coder-Next-FP8 | Qwen/Qwen3-Coder-Next-FP8 | vllm | any |
 | `qwen3-coder-next-int4-autoround.yaml` | Qwen3-Coder-Next-int4-Autoround | Intel/Qwen3-Coder-Next-int4-AutoRound | vllm | solo |
+| `qwen2.5-0.5b-instruct-gguf.yaml` | Qwen2.5-0.5B-Instruct (GGUF, llama.cpp) | Qwen/Qwen2.5-0.5B-Instruct-GGUF | **llama-cpp** | solo |
 | `qwen3-embedding-4b.yaml` | Qwen3-Embedding-4B (**serves embedding**) | Qwen/Qwen3-Embedding-4B | vllm | solo |
 | `qwen3.5-122b-fp8.yaml` | Qwen3.5-122B-FP8 | Qwen/Qwen3.5-122B-A10B-FP8 | vllm | cluster |
 | `qwen3.5-122b-int4-autoround.yaml` | Qwen3.5-122B-INT4-Autoround | Intel/Qwen3.5-122B-A10B-int4-AutoRound | vllm | any |
@@ -163,6 +164,12 @@ else. It serves GGUF rather than safetensors, and its ternary packings need
 kernels that exist only in PrismML's llama.cpp fork — so it pins the
 `llama-cpp-prism` image, and there is no version of it for an engine that
 reads safetensors.
+
+`qwen2.5-0.5b-instruct-gguf` is the other llama.cpp recipe, on the stock
+image, and the one recipe here that runs on an x86_64 host as well as on a
+Spark: the stock `llama-cpp` engine image is published for `linux/arm64` and
+`linux/amd64` under one tag, and every other engine image is arm64-only. It
+is a 676 MB smoke test for the whole deploy path, not a model to serve.
 
 Three recipes clear that bar: `gemma4-26b-a4b`, `glm-4.7-flash-awq` and
 `minimax-m2-awq`. Each is a plain dense or MoE checkpoint in a format SGLang

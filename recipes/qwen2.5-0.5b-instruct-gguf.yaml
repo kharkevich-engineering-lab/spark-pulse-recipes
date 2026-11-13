@@ -1,0 +1,72 @@
+# New recipe, not an upstream import. The smallest real chat model on stock
+# llama.cpp: a smoke test that fits anywhere, and the first recipe here that
+# runs on an x86_64 GPU host as well as on a Spark.
+#
+# Why it exists: every other recipe in this collection runs on vLLM or SGLang,
+# whose engine images are linux/arm64 only, or on the llama-cpp-prism fork,
+# which is too. The stock llama-cpp image is published for linux/arm64 and
+# linux/amd64 from one tag (spark-pulse-engine 0.2.0), so this is the recipe a
+# workstation with a 12 GB card can deploy end to end, and the one a fresh
+# Spark can check its whole path with in seconds.
+#
+# From the model card and file list of
+# https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF (read 2026-11-13):
+#   - Qwen2.5-0.5B-Instruct: 0.49B parameters, 24 layers, 32,768-token
+#     context, Apache-2.0.
+#   - The repo ships nine GGUFs (fp16 down to q2_k), which is why --hf-file is
+#     not optional: `model:` names the repo, and -hf alone would not know
+#     which file.
+#   - The spark-pulse-engine llama-cpp smoke test ran this repo's q8_0 on a
+#     GB10 (ready in 5s, 25/25 layers offloaded, 500.84 MiB model buffer).
+recipe_version: "2"
+name: Qwen2.5-0.5B-Instruct (GGUF, llama.cpp)
+model: Qwen/Qwen2.5-0.5B-Instruct-GGUF
+description: >-
+  Qwen2.5-0.5B-Instruct as a q8_0 GGUF on stock llama.cpp: 676 MB, ready in
+  seconds, on a DGX Spark or an x86_64 host with an NVIDIA GPU. A smoke test
+  for the whole deploy path rather than a model to serve anyone.
+
+engine: llama-cpp
+
+constraints:
+  # One GPU of any size holds it: under 1 GB of weights plus the cache for one
+  # 32K-token slot. Nothing about it argues for a second node.
+  solo_only: true
+  cluster_only: false
+  min_nodes: 1
+
+params:
+  port: 8000
+  host: 0.0.0.0
+  # The model's native context, and llama-server's --ctx-size.
+  max_model_len: 32768
+  # One slot: llama-server divides --ctx-size across --parallel slots, so the
+  # full 32K goes to the one request a smoke test sends.
+  max_num_seqs: 1
+  # No tensor_parallel and no gpu_memory_utilization: the llama-cpp engine
+  # maps neither, so stating them would be a claim the engine drops.
+
+engines:
+  llama-cpp:
+    # No `image:`, so the engine's default variant: stock llama.cpp, the
+    # multi-arch image. That is the point of this recipe.
+    args: >-
+      --hf-file qwen2.5-0.5b-instruct-q8_0.gguf
+      -ngl 99
+      --jinja
+    # --hf-file picks q8_0 (676 MB): near-lossless at a size that is still
+    #   nothing, and the file the engine's smoke test verified. q4_k_m
+    #   (491 MB) saves too little to be worth a different answer.
+    # -ngl 99 offloads every layer (24 of them) to the GPU.
+    # --jinja makes llama-server use the chat template the GGUF carries rather
+    #   than a guessed one.
+
+# Deliberately NOT set, and why:
+#
+#   - No second engine block. vLLM and SGLang read safetensors, not GGUF; the
+#     safetensors twin of this model is spark-pulse's bundled
+#     qwen2.5-0.5b-instruct recipe.
+#   - No sampling flags. The GGUF carries the model's own generation defaults,
+#     and a smoke test has no opinion about them.
+#   - No -c / --ctx-size in args. It comes from max_model_len through the
+#     engine's param_flags.

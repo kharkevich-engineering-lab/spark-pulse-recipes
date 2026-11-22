@@ -1,0 +1,35 @@
+# Based on OpenUncensored's model card (read 2026-11-22):
+# https://huggingface.co/OpenUncensored/Inkling-2-Mini-Uncensored
+#
+# The checkpoint is Thinking Machines' 26B-total / 3.4B-active vision MoE,
+# with NVFP4 and MXFP8 experts and a 1M-token native context. Its publisher
+# explicitly recommends SGLang's dedicated Inkling image on a DGX Spark.
+recipe_version: "2"
+name: Inkling-2-Mini-Uncensored
+model: OpenUncensored/Inkling-2-Mini-Uncensored
+description: >-
+  OpenUncensored's refusal-abliterated Inkling 2 Mini: a 26B-total, 3.4B-active
+  multimodal MoE with a 1M-token context. Runs on one DGX Spark using SGLang's
+  dedicated Inkling 2 Mini image, with vision, reasoning, and tool-call parsing.
+
+# The engine variant is part of the recipe because the model needs SGLang's
+# model-specific Inkling image rather than the generic SGLang wrapper.
+engine: sglang/inkling-2-mini
+
+constraints:
+  solo_only: true
+  cluster_only: false
+
+params:
+  port: 30000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 1000000
+  max_num_seqs: 8
+
+engines:
+  sglang:
+    args: >-
+      --attention-backend fa4 --dtype bfloat16 --page-size 128
+      --enable-multimodal --reasoning-parser inkling --tool-call-parser inkling2

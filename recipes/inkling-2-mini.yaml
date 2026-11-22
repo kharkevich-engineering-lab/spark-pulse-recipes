@@ -1,0 +1,33 @@
+# Based on Thinking Machines' model card (read 2026-11-22):
+# https://huggingface.co/thinkingmachines/Inkling-2-Mini
+#
+# Inkling 2 Mini is a 26.4B-total / 3.4B-active vision MoE in mixed NVFP4 and
+# MXFP8 precision. The model card identifies one NVIDIA DGX Spark as a
+# supported inference target and documents SGLang support.
+recipe_version: "2"
+name: Inkling-2-Mini
+model: thinkingmachines/Inkling-2-Mini
+description: >-
+  Thinking Machines' 26.4B-total, 3.4B-active multimodal Inkling 2 Mini MoE
+  with a 1M-token context. Runs on one DGX Spark using SGLang's dedicated
+  Inkling 2 Mini image, with vision, reasoning, and tool-call parsing.
+
+engine: sglang/inkling-2-mini
+
+constraints:
+  solo_only: true
+  cluster_only: false
+
+params:
+  port: 30000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 1000000
+  max_num_seqs: 8
+
+engines:
+  sglang:
+    args: >-
+      --attention-backend fa4 --dtype bfloat16 --page-size 128
+      --enable-multimodal --reasoning-parser inkling --tool-call-parser inkling2

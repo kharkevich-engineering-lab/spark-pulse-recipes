@@ -33,3 +33,10 @@ engines:
     args: >-
       --attention-backend fa4 --dtype bfloat16 --page-size 128
       --enable-multimodal --reasoning-parser inkling --tool-call-parser inkling2
+      --speculative-algorithm DSPARK
+
+# DSPARK turns on the speculator the checkpoint bundles (mtp.safetensors);
+# SGLang finds it in the model path, and the draft block (gamma 7) is fixed by
+# the checkpoint. Measured with the Uncensored weights on one DGX Spark (2026-11-23):
+# decode 37 -> 45-51 tok/s for one stream and 15 -> 24 tok/s at 285K context,
+# about even at 4-8 streams (74/118 tok/s total against 78/111).

@@ -1,0 +1,49 @@
+# Based on OpenUncensored's model card (read 2026-11-22):
+# https://huggingface.co/OpenUncensored/Inkling-2-Mini-Uncensored
+#
+# The two-node shape of inkling-2-mini-uncensored.yaml. Prefill of a long
+# prompt is attention-bound and gains least from the second node; follow-up
+# questions on the same document hit the prefix cache (TTFT 0.29 s after a
+# 261K-token first read of 103 s).
+recipe_version: "2"
+name: Inkling-2-Mini-Uncensored (TP=2)
+model: OpenUncensored/Inkling-2-Mini-Uncensored
+description: >-
+  OpenUncensored's refusal-abliterated Inkling 2 Mini: a 26B-total, 3.4B-active
+  multimodal MoE with a 1M-token context, split across two DGX Sparks with tp=2
+  over the ConnectX fabric. Faster than one node at every load and twice the
+  KV room; uses SGLang's dedicated Inkling 2 Mini image.
+
+# The engine variant is part of the recipe because the model needs SGLang's
+# model-specific Inkling image rather than the generic SGLang wrapper.
+engine: sglang/inkling-2-mini
+
+constraints:
+  solo_only: false
+  cluster_only: true
+  min_nodes: 2
+
+params:
+  port: 30000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 1000000
+  max_num_seqs: 8
+
+engines:
+  sglang:
+    args: >-
+      --attention-backend fa4 --dtype bfloat16 --page-size 128
+      --enable-multimodal --reasoning-parser inkling --tool-call-parser inkling2
+      --speculative-algorithm DSPARK
+
+# Measured on two DGX Sparks over RoCE (2026-11-23), against one node:
+#   decode, 1 stream      37 -> 53 tok/s, and 72-88 with DSPARK
+#   decode, 8 streams     111 -> 157 tok/s total (DSPARK about even here)
+#   285K prompt           TTFT 170 -> 118 s; decode 15 -> 25, and 40 with DSPARK
+#   ~943K prompt          TTFT 27 -> 12 min; decode 6.7 -> 12 tok/s
+#   full-attention KV     1.40M -> 3.01M tokens
+# Needs the sglang/inkling-2-mini engine at 0.1.1 or later, which claims
+# cluster support and no longer passes --enable-dp-attention (removed in the
+# SGLang 1.0 that image carries).

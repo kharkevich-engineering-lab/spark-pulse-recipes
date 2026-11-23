@@ -89,13 +89,14 @@ the two versioned schemas, dispatching on `recipe_version`.
 
 ## Recipes
 
-39 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
-upstream's directory layout, plus one new NVFP4 recipe, one llama.cpp one and
-one embeddings one.
+43 recipes: all 36 from upstream spark-vllm-docker, converted to v2 and keeping
+upstream's directory layout, plus one new NVFP4 recipe, two llama.cpp ones, one
+embeddings one and three Inkling 2 Mini ones on SGLang.
 "Engines" is what the recipe declares, not what has been proven on hardware.
 
 | Path | Name | Model | Engines | Topology |
 |---|---|---|---|---|
+| `2x-spark-cluster/inkling-2-mini-uncensored-tp2.yaml` | Inkling-2-Mini-Uncensored (TP=2) | OpenUncensored/Inkling-2-Mini-Uncensored | **sglang** | cluster, min 2 |
 | `3x-spark-cluster/qwen3.5-397b-int4-autoround.yaml` | Qwen3.5-397B-INT4-Autoround (PP=3) | Intel/Qwen3.5-397B-A17B-int4-AutoRound | vllm | cluster, min 3 |
 | `4x-spark-cluster/minimax-m2.5.yaml` | MiniMax-M2.5 | MiniMaxAI/MiniMax-M2.5 | vllm | cluster, min 4 |
 | `4x-spark-cluster/nemotron-3-ultra-nvfp4.yaml` | Nemotron-3-Ultra-NVFP4 | nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4 | vllm | cluster, min 4 |
@@ -112,6 +113,8 @@ one embeddings one.
 | `gemma4-26b-a4b-nvfp4.yaml` | Gemma4-26B-A4B-NVFP4 | nvidia/Gemma-4-26B-A4B-NVFP4 | vllm | solo |
 | `gemma4-26b-a4b.yaml` | Gemma4-26B-A4B | google/gemma-4-26B-A4B-it | vllm, **sglang** | any |
 | `glm-4.7-flash-awq.yaml` | GLM-4.7-Flash-AWQ | cyankiwi/GLM-4.7-Flash-AWQ-4bit | vllm, **sglang** | any |
+| `inkling-2-mini-uncensored.yaml` | Inkling-2-Mini-Uncensored | OpenUncensored/Inkling-2-Mini-Uncensored | **sglang** | solo |
+| `inkling-2-mini.yaml` | Inkling-2-Mini | thinkingmachines/Inkling-2-Mini | **sglang** | solo |
 | `inkling-small-nvfp4.yaml` | Inkling-Small-NVFP4 | thinkingmachines/Inkling-Small-NVFP4 | vllm | cluster |
 | `minimax-m2-awq.yaml` | MiniMax-M2-AWQ | QuantTrio/MiniMax-M2-AWQ | vllm, **sglang** | cluster |
 | `minimax-m2.5-awq.yaml` | MiniMax-M2.5-AWQ | cyankiwi/MiniMax-M2.5-AWQ-4bit | vllm | cluster |

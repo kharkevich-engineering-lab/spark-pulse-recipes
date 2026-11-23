@@ -24,7 +24,11 @@ params:
   tensor_parallel: 1
   gpu_memory_utilization: 0.8
   max_model_len: 1000000
-  max_num_seqs: 8
+  # 48, not 8. Requests past the cap queue for a free slot: at 16 concurrent
+  # requests a cap of 8 held half of them back (mean TTFT 31-37 s) while 48
+  # starts all of them in about a second. 48 is SGLang's own default once
+  # speculative decoding is on.
+  max_num_seqs: 48
 
 engines:
   sglang:
